@@ -149,17 +149,18 @@ class DataCollector:
     """
     Main class for data collection, this class will handle all the others
     """
-    def __init__(self, database_file_handler, sources=None):
+    def __init__(self, database_file_handler, sources=None, reference_check_engine=None):
         self.database_file_handler = database_file_handler
         self.sources = sources
         self.checked = False
+        self.reference_check_engine = reference_check_engine
         
     def reference_check(self, columns):
         missing_references = list(set([i.reference for i in self.sources]) - set(columns))
         if len(missing_references) > 0: #if there are some reference columns which we dont have
             match = PostcodeMapping.matching_source(columns, missing_references) #let's try to find them
             if match: #if we can match add to the database operations
-                self.sources.insert(0, PostcodeMapping(match, missing_references, engine))
+                self.sources.insert(0, PostcodeMapping(match, missing_references, self.reference_check_engine))
             else: #we have something missing
                 raise ObtainDataError('There are missing references! - "{}"'.format('", "'.join(missing_references)))
         
