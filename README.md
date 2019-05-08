@@ -41,7 +41,7 @@ Most of official data are under Open Government License 3.0 (https://www.nationa
 
 docker run --name postgres postgres:11.2 -d postgres
 
-Port forwarding was configured from with Kitematic (do it for port 5432).
+Port forwarding was configured from Kitematic (do it for port 5432).
 
 ### Python scripts
 
@@ -51,4 +51,4 @@ pip install psycopg2 pandas numpy sqlalchemy
 
 ## Other
 
-Some operations were done using DBeaver for database editing.
+Some Postgresql operations were done using DBeaver.
