@@ -156,6 +156,20 @@ def postcode_lookup():
     dfp.rename(columns={'oa11cd':'oa', 'lsoa11cd': 'lsoa', 'msoa11cd': 'msoa', 'ladcd': 'lad', 'pcd7': 'postcode'}, inplace=True)
     dfp.set_index('FID', inplace=True)
     dfp.to_sql(name="postcode_lookup11", con=engine, schema='public', method='multi', index_label='FID', chunksize=(2**5)*(2**10)) #this table is quite massive, it needs to be optimized or have a bit of patience (~5min with 8096 chunksize)
+    
+    # the indexes need to be created! - this is heavy!
+    import psycopg2
+    conn = psycopg2.connect("host=localhost post=5432 dbname=postcode user=postgres")
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE INDEX postcode_lookup11_lsoa_idx ON public.postcode_lookup11 USING btree (lsoa);
+        CREATE INDEX postcode_lookup11_msoa_idx ON public.postcode_lookup11 USING btree (msoa);
+        CREATE INDEX postcode_lookup11_oa_idx ON public.postcode_lookup11 USING btree (oa);
+        CREATE INDEX postcode_lookup11_postcode_idx ON public.postcode_lookup11 USING btree (postcode);
+    """)
+    conn.commit()
+    conn.close()
+    
 
 
 def census():
