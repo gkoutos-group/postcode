@@ -157,7 +157,7 @@ def postcode_lookup():
     dfp.set_index('FID', inplace=True)
     dfp.to_sql(name="postcode_lookup11", con=engine, schema='public', method='multi', index_label='FID', chunksize=(2**5)*(2**10)) #this table is quite massive, it needs to be optimized or have a bit of patience (~5min with 8096 chunksize)
     
-    # the indexes need to be created! - this is heavy!
+    # the indexes need to be created, also a small variation for postcode will be created! - this is heavy!
     import psycopg2
     conn = psycopg2.connect("host=localhost post=5432 dbname=postcode user=postgres")
     cur = conn.cursor()
@@ -166,6 +166,11 @@ def postcode_lookup():
         CREATE INDEX postcode_lookup11_msoa_idx ON public.postcode_lookup11 USING btree (msoa);
         CREATE INDEX postcode_lookup11_oa_idx ON public.postcode_lookup11 USING btree (oa);
         CREATE INDEX postcode_lookup11_postcode_idx ON public.postcode_lookup11 USING btree (postcode);
+        
+        alter table public.postcode_lookup11 add column pc text;
+        update public.postcode_lookup11 set pc = REPLACE(postcode, ' ', '');
+        
+        CREATE INDEX postcode_lookup11_pc_idx ON public.postcode_lookup11 USING btree (pc);
     """)
     conn.commit()
     conn.close()
@@ -181,6 +186,7 @@ def census():
         print(name)
         df = pd.read_csv(f, index_col=None, header=0)
         df.drop(columns=['geography'], inplace=True)
+        df.drop(columns=[i for i in ['index', 'Rural Urban', 'date'] if i in df.columns.values], inplace=True)
         original = df.columns.values #note that for printing the relation it needs to be after the column dropping
         n = len(df.columns.values)
         df.rename(columns=lambda x: pattern.sub('', x.lower().replace('without', 'w i t h o u t').replace('with', 'w i t h').replace('median', 'm e d i a n').replace('mean', 'm e a n').replace('lot', 'l o t').replace('little', 'l i t t l e').title().replace('Value', '').replace('Measures', '')), inplace=True)
@@ -196,7 +202,9 @@ def census():
         if len(set(df.columns.values)) != len(df.columns.values) or n != len(df.columns.values):
             print(n, df.columns.values, len(df.columns.values), len(set(df.columns.values)))
             break
-        df.to_sql(name='{}'.format(name), con=engine, schema='census2011', method='multi')
+        df.to_sql(name='{}'.format(name), con=engine, schema='census2011', method='multi', index=False, index_label='oa')
+
+census()
 
 
 def income():
