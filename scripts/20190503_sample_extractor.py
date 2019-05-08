@@ -10,12 +10,16 @@ class ObtainDataError(Exception):
 
 
 class DBTable:
-    def __init__(self, reference, query, engine=None, rename=True):
+    def __init__(self, reference, query, engine=None, rename=True, name=None):
         self.reference = reference
         self.engine = engine
         self.query = query
         self._number_cols = 0
         self.rename = rename
+        if name == None:
+            name = self.__class__.__name__
+        self.name = name
+        
     
     def format_for_query(self, values):
         values = [str(i) for i in set(values)]
@@ -38,7 +42,7 @@ class DBTable:
         sql_ret.drop(columns=[self.reference], inplace=True)
         sql_ret.rename(columns={'mapping': self.reference}, inplace=True)
         if self.rename:
-            sql_ret.rename(columns=lambda x: self.__class__.__name__ + '.' + x if x != self.reference else x, inplace=True)
+            sql_ret.rename(columns=lambda x: self.name + '.' + x if x != self.reference else x, inplace=True)
         return sql_ret
 
 
@@ -75,8 +79,32 @@ class CrimesStreet(DBTable):
                          """, engine=engine)
 
 
+class DBCategory:
+    def get_tables(engine=None):
+        yield
+        
+
+class Crime(DBCategory):
+    def get_tables(engine):
+        yield CrimesOutcome(engine)
+        yield CrimesStreet(engine)
+
+
+class Census11(DBCategory):
+    query_format = """with filtering_part as (
+                            select *
+                            from (values {references}) tempT(mapping)
+                         )
+                         select * from filtering_part left join census2011.{table} on filtering_part.mapping = census2011.{table}.oa"""
+    options = ['adults_not_employment_etc', 'age_structure', 'car_etc', 'census_industry', 'communal_etc', 'country_birth', 'dwellings_etc', 'economic_etc', 'ethnic_group', 'health_unpaid_care', 'hours_worked', 'household_composition', 'household_language', 'living_arrangements', 'lone_parents_household_etc', 'marital_and_civil_partnership_status', 'national_identity', 'nssec_etc', 'occupation_sex', 'passports_held', 'qualifications_students', 'religion', 'rooms_etc', 'tenure', 'usual_resident_population']
+    def get_tables(engine):
+        for t in Census11.options:
+            yield DBTable('oa', Census11.query_format.replace('{table}', t), engine=engine, name='Census11_' + t)
+    
+
+
 class PostcodeMapping(DBTable):
-    AVAILABLE = ['postcode', 'oa', 'lsoa', 'msoa', 'lad']
+    AVAILABLE = ['pc', 'oa', 'lsoa', 'msoa', 'lad']
     def matching_source(what_we_have, what_is_needed):
         matching_we_have = list(set(what_we_have).intersection(set(PostcodeMapping.AVAILABLE)))
         indexes_we_have = [PostcodeMapping.AVAILABLE.index(i) for i in matching_we_have]
@@ -151,6 +179,8 @@ test_list = ['huehuehue', 'E02004295', 'E02004320', 'E02004321', 'E02004322', 'E
 
 test_list = ['huehuehue', 'E00070659', 'E00070660', 'E00070943', 'E00070949', 'E00070950', 'E00070951', 'E00070955', 'E00070956', 'E00070944', 'E00070945', 'E00070946', 'E00070947', 'E00070948', 'E00070952', 'E00070953', 'E00070954', 'E00071184', 'E00071185', 'E00071190', 'E00071191', 'E00071194', 'E00071194', 'huehuehue']
 
+test_list = ['B152TT']
+
 e = Income(engine)
 a = e.obtain_data(test_list)
 #print(a)
@@ -159,7 +189,7 @@ j = PostcodeMapping('oa', 'msoa', engine)
 j.obtain_data(test_list)
 
 
-df = {'oa': test_list, 'kek': [i for i in range(len(test_list))]}
+df = {'pc': test_list, 'kek': [i for i in range(len(test_list))]}
 df = pd.DataFrame(data=df)
 
 def db_get():
@@ -169,11 +199,11 @@ def db_get():
 def db_get2(FILE):
     return pd.read_csv(FILE, chunksize=4096)
 
-d = DataCollector(db_get, sources=[Income(engine), CrimesOutcome(engine), CrimesStreet(engine)])
-e = pd.concat([i for i in d.collect()])
+d = DataCollector(db_get, sources=[Income(engine)] + [i for i in Crime.get_tables(engine)] + [i for i in Census11.get_tables(engine)])
+e = pd.concat([i for i in d.collect()]) #only use concat if the data can fit the memory
 print(e.head())
 print(e.columns.values)
-print(e['oa'])
+print(e['pc'])
 
 
 
