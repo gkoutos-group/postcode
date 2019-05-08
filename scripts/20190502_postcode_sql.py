@@ -52,60 +52,90 @@ from sqlalchemy import create_engine
 engine = create_engine('postgresql://postgres@localhost:5432/postcode')
 
 def crimes():
-
-
-pattern = re.compile('[\W_]+')
-files = glob("crime/**/*.csv", recursive=True)
-outcomes = [pd.read_csv(i, index_col=None, header=0) for i in files if "outcomes" in i]
-stopsearch = [pd.read_csv(i, index_col=None, header=0) for i in files if "stop-and-search" in i]
-street = [pd.read_csv(i, index_col=None, header=0) for i in files if "street" in i]
-df_outcomes = pd.concat(outcomes, axis=0, ignore_index=True)
-df_outcomes.rename(columns={'Month':'month',
+    pattern = re.compile('[\W_]+')
+    files = glob("crime/**/*.csv", recursive=True)
+    outcomes = [pd.read_csv(i, index_col=None, header=0) for i in files if "outcomes" in i]
+    stopsearch = [pd.read_csv(i, index_col=None, header=0) for i in files if "stop-and-search" in i]
+    street = [pd.read_csv(i, index_col=None, header=0) for i in files if "street" in i]
+    #crime outcomes database
+    df_outcomes = pd.concat(outcomes, axis=0, ignore_index=True)
+    df_outcomes.rename(columns={'Month':'month',
+                                'Longitude': 'longitude',
+                                'Latitude': 'latitude',
+                                'LSOA code': 'lsoa',
+                                'Outcome type': 'outcome',
+                                'Crime ID': 'count'}, inplace=True)
+    df_outcomes.drop(columns=['Reported by', 'Falls within', 'Location', 'LSOA name'], inplace=True) #'Crime ID'
+    df_outcomes.to_sql(name='crimes_outcomes', con=engine, schema='raw', method='multi', index=False, index_label='lsoa')
+    # get the year from the year-month
+    df_outcomes['year'] =  df_outcomes['month'].str.extract(r'^([\d]+)-')[0] # pd.to_datetime(df_outcomes['month'], format='%Y-%m')
+    df_outcomes.drop(columns=['latitude', 'longitude', 'month'], inplace=True)
+    #the next line will count the total of cases by year
+    total = df_outcomes.groupby(['lsoa', 'year'], as_index=False).count()
+    total.drop(columns=['outcome'], inplace=True)
+    total['year'] = 'Total-' + total['year']
+    total = total.pivot_table(index='lsoa', columns='year', values='count')
+    #here we are counting by type and year
+    df_outcomes = df_outcomes.groupby(['lsoa', 'outcome', 'year'], as_index=False).count()
+    # pivot for compiled
+    df_outcomes = df_outcomes.pivot_table(index='lsoa', columns=['outcome', 'year'], values='count').rename(columns=lambda x: pattern.sub('', x.lower().replace('without', 'w i t h o u t').replace('with', 'w i t h').replace('median', 'm e d i a n').replace('mean', 'm e a n').replace('lot', 'l o t').replace('little', 'l i t t l e').title().replace('Value', '').replace('Measures', '')))
+    #concatenate the multi-level columns
+    df_outcomes.columns = ['%s%s' % (a, '-%s' % b if b else '') for a, b in df_outcomes.columns]
+    #join the columns
+    df_outcomes = df_outcomes.join(total)
+    df_outcomes.fillna(0, inplace=True)
+    # send to database
+    df_outcomes.to_sql(name='crimes_outcomes_yearly', con=engine, schema='compiled', method='multi', index_label='lsoa')
+    # stop and search database
+    df_stopsearch = pd.concat(stopsearch, axis=0, ignore_index=True)
+    df_stopsearch.rename(columns={'Type': 'type',
+                                'Date': 'date',
+                                'Latitude': 'latitude',
+                                'Longitude': 'longitude',
+                                'Age range': 'age',
+                                'Self-defined ethnicity': 'self_defined_ethnicity',
+                                'Officer-defined ethnicity': 'officer_ethnicity',
+                                'Object of search': 'object_of_search',
+                                'Outcome': 'outcome',
+                                'Outcome linked to object of search': 'outcome_to_search',
+                                'Removal of more than just outer clothing': 'removal_of_inner_clothing'}, inplace=True)
+    #the next operations are ignored due to not being useful for next steps
+    df_stopsearch.drop(columns=['Part of a policing operation', 'Policing operation', 'Gender', 'Legislation'], inplace=True)
+    df_stopsearch.to_sql(name='crimes_stopsearch', con=engine, schema='raw', method='multi', index=False, index_label='lsoa')
+    #df_stopsearch['date'] = pd.to_datetime(df_stopsearch['date']) #, format='%Y-%m-%dT%H:%M:%S+%Z:00')
+    # this table is not worked much. it is sent to the raw schema
+    # street crimes database
+    #for this database we are following an approach close to the crimes outcomes
+    df_street = pd.concat(street, axis=0, ignore_index=True)
+    # send the raw database
+    df_street.rename(columns={'Month': 'month',
                             'Longitude': 'longitude',
                             'Latitude': 'latitude',
                             'LSOA code': 'lsoa',
-                            'Outcome type': 'outcome'}, inplace=True)
-df_outcomes.drop(columns=['Crime ID', 'Reported by', 'Falls within', 'Location', 'LSOA name'], inplace=True)
-df_outcomes['month'] =  pd.to_datetime(df_outcomes['month'], format='%Y-%m')
-df_stopsearch = pd.concat(stopsearch, axis=0, ignore_index=True)
-df_stopsearch.rename(columns={'Type': 'type',
-                            'Date': 'date',
-                            'Latitude': 'latitude',
-                            'Longitude': 'longitude',
-                            'Age range': 'age',
-                            'Self-defined ethnicity': 'self_defined_ethnicity',
-                            'Officer-defined ethnicity': 'officer_ethnicity',
-                            'Object of search': 'object_of_search',
-                            'Outcome': 'outcome',
-                            'Outcome linked to object of search': 'outcome_to_search',
-                            'Removal of more than just outer clothing': 'removal_of_inner_clothing'}, inplace=True)
-df_stopsearch.drop(columns=['Part of a policing operation', 'Policing operation', 'Gender', 'Legislation'], inplace=True)
-df_stopsearch['date'] = pd.to_datetime(df_stopsearch['date']) #, format='%Y-%m-%dT%H:%M:%S+%Z:00')
-df_street = pd.concat(street, axis=0, ignore_index=True)
-df_street.rename(columns={'Month': 'month',
-                        'Longitude': 'longitude',
-                        'Latitude': 'latitude',
-                        'LSOA code': 'lsoa',
-                        'Crime type': 'crime_type',
-                        'Last outcome category': 'outcome'}, inplace=True)
-df_street.drop(columns=['Crime ID', 'Reported by', 'Falls within', 'Location', 'LSOA name', 'Context'], inplace=True)
-df_street['month'] =  pd.to_datetime(df_street['month'], format='%Y-%m')
-
-df_outcomes.drop(columns=['latitude', 'longitude'], inplace=True)
-df_outcomes = df_outcomes.groupby(['lsoa', 'outcome'], as_index=False).count()
-
-df_street.drop(columns=['latitude', 'longitude'], inplace=True)
-df_street = df_street.groupby(['lsoa', 'crime_type', 'outcome'], as_index=False).count()
-
-df_outcomes.to_sql(name='crimes_outcomes', con=engine, schema='raw', method='multi', index_label='lsoa')
-df_stopsearch.to_sql(name='crimes_stopsearch', con=engine, schema='raw', method='multi')
-df_street.to_sql(name='crimes_street', con=engine, schema='raw', method='multi', index_label='lsoa')
-
-df_outcomes.pivot(index='lsoa', columns='outcome', values='month').rename(columns=lambda x: pattern.sub('', x.lower().replace('without', 'w i t h o u t').replace('with', 'w i t h').replace('median', 'm e d i a n').replace('mean', 'm e a n').replace('lot', 'l o t').replace('little', 'l i t t l e').title().replace('Value', '').replace('Measures', '')))
-df_street.pivot(index='lsoa', columns=['crime_type', 'outcome'], values='month').rename(columns=lambda x: pattern.sub('', x.lower().replace('without', 'w i t h o u t').replace('with', 'w i t h').replace('median', 'm e d i a n').replace('mean', 'm e a n').replace('lot', 'l o t').replace('little', 'l i t t l e').title().replace('Value', '').replace('Measures', '')))
-
-
-#TODO: add year to the groupings both to df_outcomes and df_street; 
+                            'Crime type': 'crime_type',
+                            'Crime ID': 'count',
+                            'Last outcome category': 'outcome'}, inplace=True)
+    df_street.drop(columns=['Reported by', 'Falls within', 'Location', 'LSOA name', 'Context'], inplace=True)
+    df_street.to_sql(name='crimes_street', con=engine, schema='raw', method='multi', index=False, index_label='lsoa')
+    df_street['year'] =  df_street['month'].str.extract(r'^([\d]+)-')[0]
+    df_street.drop(columns=['latitude', 'longitude', 'outcome', 'month'], inplace=True)
+    #the next line will count the total of cases by year
+    total = df_street.groupby(['lsoa', 'year'], as_index=False).count()
+    total.drop(columns=['crime_type'], inplace=True)
+    total['year'] = 'Total-' + total['year']
+    total = total.pivot_table(index='lsoa', columns='year', values='count')
+    #here we are counting by type and year
+    df_street = df_street.groupby(['lsoa', 'crime_type', 'year'], as_index=False).count()
+    # pivot for compiled
+    df_street = df_street.pivot_table(index='lsoa', columns=['crime_type', 'year'], values='count').rename(columns=lambda x: pattern.sub('', x.lower().replace('without', 'w i t h o u t').replace('with', 'w i t h').replace('median', 'm e d i a n').replace('mean', 'm e a n').replace('lot', 'l o t').replace('little', 'l i t t l e').title().replace('Value', '').replace('Measures', '')))
+    #concatenate the multi-levle columns
+    df_street.columns = ['%s%s' % (a, '-%s' % b if b else '') for a, b in df_street.columns]
+    #join the columns
+    df_street = df_street.join(total)
+    df_street.fillna(0, inplace=True)
+    # send to database
+    df_street.to_sql(name='crimes_street_type_yearly', con=engine, schema='compiled', method='multi', index_label='lsoa')
+    
 
 def postcode_lookup():
     dfp = pd.read_csv('Postcode_Lookup_in_the_UK.csv', index_col=None, header=0, low_memory=False)

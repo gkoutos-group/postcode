@@ -56,7 +56,7 @@ class Crimes(DBTable):
                             select *
                             from (values {references}) tempT(mapping)
                          )
-                         select * from filtering_part left join compiled.crimes_street_crime_type_yearly on filtering_part.mapping = compiled.crimes_street_crime_type_yearly.lsoa
+                         select * from filtering_part left join compiled.crimes_outcomes_yearly on filtering_part.mapping = compiled.crimes_outcomes_yearly.lsoa
                          """, engine=engine)
 
 
