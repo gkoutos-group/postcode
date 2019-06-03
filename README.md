@@ -35,6 +35,8 @@ Multiple variables that map an area code to key statistics were downloaded.
 
 Most of official data are under Open Government License 3.0 (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
 
+A copy of the data utilised is available in the _data/_ folder.
+
 ## Installation
 
 ### Docker image:
@@ -48,6 +50,12 @@ Port forwarding was configured from Kitematic (do it for port 5432).
 source venv/bin/activate
 
 pip install psycopg2 pandas numpy sqlalchemy
+
+### Getting it ready
+
+Extract the _data/_ files and move them to the main folder.
+
+Execute the _20190502_postcode_sql.py_ script.
 
 ## Other
 
