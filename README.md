@@ -35,7 +35,7 @@ Multiple variables that map an area code to key statistics were downloaded.
 
 Most of official data are under Open Government License 3.0 (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
 
-A copy of the data utilised is available in the _data/_ folder.
+A copy of the data utilised is available in the _data/_ folder (please note that the police data was extracted only for West Midlands).
 
 ## Installation
 
