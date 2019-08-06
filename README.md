@@ -41,9 +41,9 @@ A copy of the data utilised is available in the _data/_ folder (please note that
 
 ### Docker image:
 
-docker run --name postgres postgres:11.2 -d postgres
+docker run --name postcode_mapper_postgresdb --restart unless-stopped -p 5432:5432 postgres:11.2 -d postgres
 
-Port forwarding was configured from Kitematic (do it for port 5432).
+This will create a container with name postcode_mapper_postgresdb, which will restart automatically and map the port 5432 to the host.
 
 ### Python scripts
 
