@@ -45,6 +45,20 @@ docker run --name postcode_mapper_postgresdb --restart unless-stopped -p 5432:54
 
 This will create a container with name postcode_mapper_postgresdb, which will restart automatically and map the port 5432 to the host.
 
+### Create database and schemas:
+
+docker exec -it postcode_mapper_postgresdb
+
+psql
+
+```sql
+CREATE DATABASE postcode;
+\c postcode;
+CREATE SCHEMA compiled;
+CREATE SCHEMA raw;
+CREATE SCHEMA census2011;
+```
+
 ### Python scripts
 
 source venv/bin/activate
