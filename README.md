@@ -51,11 +51,12 @@ docker exec -it postcode_mapper_postgresdb
 
 psql
 
+```sql
 CREATE DATABASE postcode;
-
-USE postcode;
-
+\c postcode;
 CREATE SCHEMA compiled;
+CREATE SCHEMA raw;
+```
 
 ### Python scripts
 
