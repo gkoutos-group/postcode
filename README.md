@@ -56,6 +56,7 @@ CREATE DATABASE postcode;
 \c postcode;
 CREATE SCHEMA compiled;
 CREATE SCHEMA raw;
+CREATE SCHEMA census2011;
 ```
 
 ### Python scripts
