@@ -5,7 +5,7 @@ def create_tables():
     This function is not needed given that the copy function used will create these tables
     """
     import psycopg2
-    conn = psycopg2.connect("host=localhost post=5432 dbname=postcode user=postgres")
+    conn = psycopg2.connect("host=localhost port=5432 dbname=postcode user=postgres")
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE crimes_outcomes(
@@ -157,9 +157,10 @@ def postcode_lookup():
     dfp.set_index('FID', inplace=True)
     dfp.to_sql(name="postcode_lookup11", con=engine, schema='public', method='multi', index_label='FID', chunksize=(2**5)*(2**10)) #this table is quite massive, it needs to be optimized or have a bit of patience (~5min with 8096 chunksize)
     
+def postcode_indexes():
     # the indexes need to be created, also a small variation for postcode will be created! - this is heavy!
     import psycopg2
-    conn = psycopg2.connect("host=localhost post=5432 dbname=postcode user=postgres")
+    conn = psycopg2.connect("host=localhost port=5432 dbname=postcode user=postgres")
     cur = conn.cursor()
     cur.execute("""
         CREATE INDEX postcode_lookup11_lsoa_idx ON public.postcode_lookup11 USING btree (lsoa);
@@ -204,8 +205,6 @@ def census():
             break
         df.to_sql(name='{}'.format(name), con=engine, schema='census2011', method='multi', index=False, index_label='oa')
 
-census()
-
 
 def income():
     files = ['income/1netannualincome.csv', 'income/1netannualincomeahc.csv', 'income/1netannualincomebhc.csv', 'income/1totalannualincome.csv']
@@ -229,4 +228,18 @@ def income():
         #print(len(df))
     df.set_index('msoa', inplace=True)
     df.to_sql(name='income', con=engine, schema='compiled', method='multi', index_label='msoa')
+
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == 'all':
+        create_tables()
+        income()
+        postcode_lookup()
+        postcode_indexes()
+        crimes()
+        census()
+        print('.')
+    else:
+        print('nothing was created, run with\n{} all'.format(sys.argv[0]))
 
