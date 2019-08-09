@@ -180,14 +180,14 @@ def postcode_indexes():
 def imd():
     pattern = re.compile('[a-z\W_]+')
     #  IMD obtained from: https://www.gov.uk/government/statistics/english-indices-of-deprivation-2015
-    FILE = 'File_7_ID_2015_All_ranks__deciles_and_scores_for_the_Indices_of_Deprivation__and_population_denominators.csv'
+    FILE = 'data/File_7_ID_2015_All_ranks__deciles_and_scores_for_the_Indices_of_Deprivation__and_population_denominators.csv'
     df = pd.read_csv(FILE, index_col=None, header=0)
+    df.drop(columns=["LSOA name (2011)", "Local Authority District code (2013)", "Local Authority District name (2013)"], inplace=True)
     original = df.columns.values #note that for printing the relation it needs to be after the column dropping
     n = len(df.columns.values)
     df.rename(columns=lambda x: pattern.sub('', x.lower().title()), inplace=True)
     #print(df.columns.values)
     df.rename(columns={'LC2011': 'lsoa', 'LN2011': 'lsoanm', 'LADC2013': 'lad', 'LADN2013': 'ladnm'}, inplace=True)
-    df.drop(columns=['lsoanm', 'lad', 'ladnm'], inplace=True)
     print('\n'.join(['"{}","{}"'.format(i,j) for i,j in zip(original, df.columns.values)]))
     k = [len(i) for i in df.columns.values]
     if max(k) > 60:
