@@ -3,6 +3,7 @@
 from sqlalchemy import create_engine
 import pandas as pd
 import numpy as np
+import time
 
 
 class ObtainDataError(Exception):
@@ -169,13 +170,19 @@ class DataCollector:
         # first add the new columns for a database
         # add the values
         for chunk in self.database_file_handler():
+            start_chunk = time.time()
             if not self.checked:
                 self.reference_check(chunk.columns.values)
                 self.checked = True
             for d in self.sources:
+                start_time = time.time()
                 ndf = d.obtain_data(chunk[d.reference])
+                internal_time = time.time()
                 ndf[d.reference] = ndf[d.reference].astype('str')
-                chunk = chunk.merge(ndf, on=d.reference, how='left')
+                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
+                print("|- Internal processing took {}s".format(time.time() - internal_time))
+                print("|- Source '{}' took {}s".format(d.__class__.__name__, time.time() - start_time))
+            print("Chunk took {}s".format(time.time() - start_chunk))
             yield chunk
 
 
