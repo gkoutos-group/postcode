@@ -68,6 +68,28 @@ class CrimesOutcome(DBTable):
                          """, engine=engine)
 
 
+class IndexMultipleDeprivation(DBTable):
+    def __init__(self, engine, mode='everything'):
+        modes = ['everything', 'only_scores']
+        if mode == 'everything':
+            query = """
+                         with filtering_part as (
+                            select *
+                            from (values {references}) tempT(mapping)
+                         )
+                         select * from filtering_part left join public.indexmultipledeprivation on filtering_part.mapping = public.indexmultipledeprivation.lsoa"""
+        elif mode == 'only_scores':
+            query = """
+                         with filtering_part as (
+                            select *
+                            from (values {references}) tempT(mapping)
+                         )
+                         select * from filtering_part left join (select lsoa, "IOMDIS" as IMD from public.indexmultipledeprivation) as imdt on filtering_part.mapping = imdt.lsoa"""
+        else:
+            raise ObtainDataError('Invalid mode for "{}", please select one of: "{}"'.format(self.__class__.__name__, '", "'.join(modes)))
+        super().__init__('lsoa', query=query, engine=engine)
+
+
 class CrimesStreet(DBTable):
     def __init__(self, engine):
         super().__init__('lsoa', query="""

@@ -175,7 +175,31 @@ def postcode_indexes():
     """)
     conn.commit()
     conn.close()
-    
+
+
+def imd():
+    pattern = re.compile('[a-z\W_]+')
+    #  IMD obtained from: https://www.gov.uk/government/statistics/english-indices-of-deprivation-2015
+    FILE = 'File_7_ID_2015_All_ranks__deciles_and_scores_for_the_Indices_of_Deprivation__and_population_denominators.csv'
+    df = pd.read_csv(FILE, index_col=None, header=0)
+    original = df.columns.values #note that for printing the relation it needs to be after the column dropping
+    n = len(df.columns.values)
+    df.rename(columns=lambda x: pattern.sub('', x.lower().title()), inplace=True)
+    #print(df.columns.values)
+    df.rename(columns={'LC2011': 'lsoa', 'LN2011': 'lsoanm', 'LADC2013': 'lad', 'LADN2013': 'ladnm'}, inplace=True)
+    df.drop(columns=['lsoanm', 'lad', 'ladnm'], inplace=True)
+    print('\n'.join(['"{}","{}"'.format(i,j) for i,j in zip(original, df.columns.values)]))
+    k = [len(i) for i in df.columns.values]
+    if max(k) > 60:
+        print(k)
+        print(df.columns.values)
+        raise Exception('too long column')
+    #check for duplicated columns
+    if len(set(df.columns.values)) != len(df.columns.values) or n != len(df.columns.values):
+        print(n, df.columns.values, len(df.columns.values), len(set(df.columns.values)))
+        raise Exception('repeated columns in imd')
+    print(df.columns.values)
+    df.to_sql(name='indexmultipledeprivation', con=engine, schema='public', method='multi', index=False, index_label='lsoa')
 
 
 def census():
@@ -200,6 +224,7 @@ def census():
             print(df.columns.values)
             break
         #due to some issues some variables were changed to avoid problems: little, lot, mean, median
+        # this is the check for columns with duplicated names
         if len(set(df.columns.values)) != len(df.columns.values) or n != len(df.columns.values):
             print(n, df.columns.values, len(df.columns.values), len(set(df.columns.values)))
             break
@@ -239,6 +264,7 @@ if __name__ == '__main__':
         postcode_indexes()
         crimes()
         census()
+        imd()
         print('.')
     else:
         print('nothing was created, run with\n{} all'.format(sys.argv[0]))
