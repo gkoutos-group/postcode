@@ -172,11 +172,12 @@ class DataCollector:
     """
     Main class for data collection, this class will handle all the others
     """
-    def __init__(self, database_file_handler, sources=None, reference_check_engine=None):
+    def __init__(self, database_file_handler, sources=None, reference_check_engine=None, verbose=False):
         self.database_file_handler = database_file_handler
         self.sources = sources
         self.checked = False
         self.reference_check_engine = reference_check_engine
+        self.verbose = verbose
         
     def reference_check(self, columns):
         missing_references = list(set([i.reference for i in self.sources]) - set(columns))
@@ -202,9 +203,11 @@ class DataCollector:
                 internal_time = time.time()
                 ndf[d.reference] = ndf[d.reference].astype('str')
                 chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
-                print("|- Internal processing took {}s".format(time.time() - internal_time))
-                print("|- Source '{}' took {}s".format(d.__class__.__name__, time.time() - start_time))
-            print("Chunk took {}s".format(time.time() - start_chunk))
+                if self.verbose:
+                    print("|- Internal processing took {}s".format(time.time() - internal_time))
+                    print("|- Source '{}' took {}s".format(d.__class__.__name__, time.time() - start_time))
+            if self.verbose:
+                print("Chunk took {}s".format(time.time() - start_chunk))
             yield chunk
 
 
