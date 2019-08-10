@@ -16,35 +16,121 @@ class DBTable:
         self.engine = engine
         self.query = query
         self._number_cols = 0
+        self._columns = []
         self.rename = rename
         if name == None:
             name = self.__class__.__name__
         self.name = name
+
+    def __str__(self):
+        return '{}: {}'.format(self.name, self.reference)
+
+    def __repr__(self):
+        return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
         
-    
-    def format_for_query(self, values):
+    def _format_for_query(self, values):
         values = [str(i) for i in set(values)]
-        return self.query.format(references="('" + "'), ('".join(values) + "')", references_l="('" + "', '".join(values) + "')")
+        return  "('" + "'), ('".join(values) + "')"
+
+    def _obtain_pre_checks(self, mapping):
+        if self.engine is None:
+            raise ObtainDataError('Engine is not defined')
+
+    def _obtain_post_checks(self, mapping, sql_ret):
+        if self._number_cols is 0: # if not data was extracted before let's define the number of columns and the order
+            self._number_cols = len(sql_ret.columns.values) - 1
+            self._columns = sql_ret.columns.values
+        elif self._number_cols != len(sql_ret.columns.values) - 1: #if there was a query before and the number of columns now is different it means there is something wrong
+            raise ObtainDataError('Invalid number of columns returned. Deactivate {}'.format(self.__class__.__name__))
+        elif sum([i != j for i, j in zip(self._columns, sql_ret.columns.values)]) > 0: #check the columns names
+            raise ObtainDataError('The columns returned differ between iteractions. Deactivate {}'.format(self.__class__.__name__))
+        if len(sql_ret) > len(mapping): #check number of rows
+            raise ObtainDataError('Invalid number of rows returned. We have more rows returned ({}) than requested ({}). Deactivate {}'.format(len(sql_ret), len(mapping), self.__class__.__name__))
+
+    def _obtain_data(self, mapping):
+        sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping))
+        return pd.read_sql_query(sql, con=self.engine)
     
     def obtain_data(self, mapping):
         """
         Obtain data for a set of mapping values
         """
-        if self.engine is None:
-            raise ObtainDataError('Engine is not defined')
-        sql=self.format_for_query(mapping)
-        sql_ret = pd.read_sql_query(sql, con=self.engine)
-        if self._number_cols is 0:
-            self._number_cols = len(sql_ret.columns.values) - 1
-        elif self._number_cols != len(sql_ret.columns.values) - 1:
-            raise ObtainDataError('Invalid number of columns returned. Deactivate {}'.format(self.__class__.__name__))
-        if len(sql_ret) > len(mapping):
-            raise ObtainDataError('Invalid number of rows returned. We have more rows returned ({}) than requested ({}). Deactivate {}'.format(len(sql_ret), len(mapping), self.__class__.__name__))
-        sql_ret.drop(columns=[self.reference], inplace=True)
-        sql_ret.rename(columns={'mapping': self.reference}, inplace=True)
-        if self.rename:
+        self._obtain_pre_checks(mapping) #pre-checks related to input or current state
+        sql_ret = self._obtain_data(mapping)
+        self._obtain_post_checks(mapping, sql_ret) #post-checks related to the output
+        if self.rename: # add names associated with this class
             sql_ret.rename(columns=lambda x: self.name + '.' + x if x != self.reference else x, inplace=True)
         return sql_ret
+
+
+class DBTableTimed(DBTable):
+    _VALID_MODES = {None: [False, False, False, False],
+                   'between': [True, True, False, False],
+                   'outside': [True, True, False, False],
+                   'before': [False, False, True, None],
+                   'after': [False, False, True, None]
+                   }
+
+    def __init__(self, reference, query, engine=None, rename=True, name=None, mode=None, begin_date=None, end_date=None, ref_date=None, delay=None):
+        super().__init__(reference, query, engine, rename, name)
+        self.mode = mode
+        self.begin_date = begin_date
+        self.end_date = end_date
+        self.ref_date = ref_date
+        self.delay = str(int(delay))
+        self.reference = [reference]
+        self._check_settings()
+
+    def _check_settings(self):
+        def _check_columns(begin_date, end_date, ref_date, delay, mode_setup):
+            """
+            Check for wrong variables passage given the mode
+            """
+            missing_columns = list()
+            extra_columns = list()
+            for st, nd in zip([('begin_date', begin_date), ('end_date', end_date), ('ref_date', ref_date), ('delay', delay)], mode_setup):
+                i, j = st
+                if nd is False and j is None:
+                    continue
+                elif nd is False and j is not None:
+                    extra_columns.append('{}": "{}'.format(i, j))
+                elif nd is True and j is None:
+                    missing_columns.append('{}": "{}'.format(i, j))
+                elif nd is True and j is not None:
+                    self.reference.append(j)
+                elif nd is None and j is not None:
+                    self.reference.append(j)
+            if len(extra_columns) > 0:
+                EXTRA_COLUMNS = '"' + '", "'.join(extra_columns) + '"'
+            else:
+                EXTRA_COLUMNS = ''
+            if len(missing_columns) > 0:
+                raise ObtainDataError('Missing values for "{}": "{}"{EXTRA_COLUMNS}'.replace('{EXTRA_COLUMNS}', EXTRA_COLUMNS).format(self.__class__.__name__, '", "'.join(missing_columns)))
+            elif len(extra_columns) > 0:
+                raise ObtainDataError('Extra columns for "{}". Extra columns {} were ignored.'.format(self.__class__.__name__, EXTRA_COLUMNS))
+
+        if self.mode in self._VALID_MODES:
+            _check_columns(self.begin_date, self.end_date, self.ref_date, self.delay, self._VALID_MODES[self.mode])
+        else:
+            raise ObtainDataError('Mode invalid for "{}". Expected "{}"'.format(self.__class__.__name__, '", "'.join([str(i) for i in self._VALID_MODES[self.mode]])))
+
+    def _obtain_data(self, mapping): ##TODO IMPLEMENT
+        col_values = {c: self._format_for_query(mapping[c]) for c in mapping.columns.values}
+        ## the rules
+        if mode is None:
+            # the basic
+            pass
+        elif mode == 'after':
+            WHERE_CLAUSE = '{VARIABLE} > DATEADD(DAY, {DELAY}, ref_date)'
+        elif mode == 'before':
+            WHERE_CLAUSE = '{VARIABLE} < DATEADD(DAY, {DELAY}, ref_date)'
+        elif mode == 'between':
+            WHERE_CLAUSE = 'BETWEEN {VARIABLE} BETWEEN begin_date AND end_date'
+        elif mode == 'outside':
+            WHERE_CLAUSE = '{VARIABLE} < begin_date or {VARIABLE} > end_date'
+        self.query.format(WHERE=WHERE_CLAUSE.format(VARIABLE='', DELAY=self.delay))
+        ## 
+        return pd.read_sql_query(sql, con=self.engine)
 
 
 class Income(DBTable):
@@ -52,9 +138,12 @@ class Income(DBTable):
         super().__init__('msoa', query="""
                          with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT(msoa)
+                         ), condition as (
+                            select *
+                            from compiled.income
                          )
-                         select * from filtering_part left join compiled.income on filtering_part.mapping = compiled.income.msoa
+                         select condition.* from filtering_part left join condition on filtering_part.msoa = condition.msoa
                          """, engine=engine)
 
 
@@ -63,9 +152,12 @@ class CrimesOutcome(DBTable):
         super().__init__('lsoa', query="""
                          with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT(lsoa)
+                         ), condition as (
+                            select *
+                            from compiled.crimes_outcomes_yearly
                          )
-                         select * from filtering_part left join compiled.crimes_outcomes_yearly on filtering_part.mapping = compiled.crimes_outcomes_yearly.lsoa
+                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa
                          """, engine=engine)
 
 
@@ -76,16 +168,22 @@ class IndexMultipleDeprivation(DBTable):
             query = """
                          with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT(lsoa)
+                         ), condition as (
+                            select *
+                            from public.indexmultipledeprivation
                          )
-                         select * from filtering_part left join public.indexmultipledeprivation on filtering_part.mapping = public.indexmultipledeprivation.lsoa"""
+                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa"""
         elif mode == 'only_scores':
             query = """
                          with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT(lsoa)
+                         ), condition as (
+                            select lsoa, "IOMDIS" as IMD
+                            from public.indexmultipledeprivation
                          )
-                         select * from filtering_part left join (select lsoa, "IOMDIS" as IMD from public.indexmultipledeprivation) as imdt on filtering_part.mapping = imdt.lsoa"""
+                         select condition.* from filtering_part left join condition on filtering_part.mapping = condition.lsoa"""
         else:
             raise ObtainDataError('Invalid mode for "{}", please select one of: "{}"'.format(self.__class__.__name__, '", "'.join(modes)))
         super().__init__('lsoa', query=query, engine=engine)
@@ -96,9 +194,12 @@ class CrimesStreet(DBTable):
         super().__init__('lsoa', query="""
                          with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT(lsoa)
+                         ), condition as (
+                            select *
+                            from compiled.crimes_street_type_yearly
                          )
-                         select * from filtering_part left join compiled.crimes_street_type_yearly on filtering_part.mapping = compiled.crimes_street_type_yearly.lsoa
+                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa
                          """, engine=engine)
 
 
@@ -116,9 +217,12 @@ class Crime(DBCategory):
 class Census11(DBCategory):
     query_format = """with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT(oa)
+                         ), condition as (
+                            select *
+                            from census2011.{table}
                          )
-                         select * from filtering_part left join census2011.{table} on filtering_part.mapping = census2011.{table}.oa"""
+                         select condition.* from filtering_part left join condition on filtering_part.oa = condition.oa"""
     options = ['adults_not_employment_etc', 'age_structure', 'car_etc', 'census_industry', 'communal_etc', 'country_birth', 'dwellings_etc', 'economic_etc', 'ethnic_group', 'health_unpaid_care', 'hours_worked', 'household_composition', 'household_language', 'living_arrangements', 'lone_parents_household_etc', 'marital_and_civil_partnership_status', 'national_identity', 'nssec_etc', 'occupation_sex', 'passports_held', 'qualifications_students', 'religion', 'rooms_etc', 'tenure', 'usual_resident_population']
     def get_tables(engine):
         for t in Census11.options:
@@ -159,12 +263,12 @@ class PostcodeMapping(DBTable):
         super().__init__(from_variable, query="""
                          with filtering_part as (
                             select *
-                            from (values {references}) tempT(mapping)
+                            from (values {references}) tempT({from_variable})
                          ),
                          new_variables as (
                             select distinct "{from_variable}", "{to_variables}" from public.postcode_lookup11 where "{from_variable}" in {references_l}
                          )
-                         select * from filtering_part left join new_variables on filtering_part.mapping = new_variables.{from_variable}
+                         select new_variables.* from filtering_part left join new_variables on filtering_part.{from_variable} = new_variables.{from_variable}
                          """.replace('{from_variable}', from_variable).replace('{to_variables}', '","'.join(to_variables)), engine=engine, rename=False)
 
 
@@ -180,7 +284,15 @@ class DataCollector:
         self.verbose = verbose
         
     def reference_check(self, columns):
-        missing_references = list(set([i.reference for i in self.sources]) - set(columns))
+        def _flatten(ll):
+            ret = list()
+            for i in ll:
+                if type(i) is list:
+                    ret += i
+                else:
+                    ret.append(i)
+            return ret
+        missing_references = list(set(_flatten([i.reference for i in self.sources])) - set(columns))
         if len(missing_references) > 0: #if there are some reference columns which we dont have
             match = PostcodeMapping.matching_source(columns, missing_references) #let's try to find them
             if match: #if we can match add to the database operations
