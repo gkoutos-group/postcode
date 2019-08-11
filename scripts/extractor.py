@@ -59,26 +59,30 @@ class DBTable:
         sql_ret = self._obtain_data(mapping)
         self._obtain_post_checks(mapping, sql_ret) #post-checks related to the output
         if self.rename: # add names associated with this class
-            sql_ret.rename(columns=lambda x: self.name + '.' + x if x != self.reference else x, inplace=True)
+            sql_ret.rename(columns=lambda x: self.name + '.' + x if x != self.reference and type(self.reference) is list and x not in self.reference else x, inplace=True)
         return sql_ret
 
 
 class DBTableTimed(DBTable):
+    # the modes contain the possible variables: begin_date, end_date, ref_date, delay
     _VALID_MODES = {None: [False, False, False, False],
-                   'between': [True, True, False, False],
-                   'outside': [True, True, False, False],
+                   'between': [True, True, False, None],
+                   'outside': [True, True, False, None],
                    'before': [False, False, True, None],
                    'after': [False, False, True, None]
                    }
 
-    def __init__(self, reference, query, engine=None, rename=True, name=None, mode=None, begin_date=None, end_date=None, ref_date=None, delay=None):
+    def __init__(self, reference, query, engine=None, rename=True, name=None, mode=None, begin_date=None, end_date=None, ref_date=None, delay=None, first_presence=None, table_date_variable=None):
         super().__init__(reference, query, engine, rename, name)
         self.mode = mode
         self.begin_date = begin_date
         self.end_date = end_date
         self.ref_date = ref_date
-        self.delay = str(int(delay))
+        self.delay = str(int(delay)) if delay else None
         self.reference = [reference]
+        self.inputvars = [reference]
+        self.first_presence = first_presence
+        self.table_date_variable = table_date_variable
         self._check_settings()
 
     def _check_settings(self):
@@ -98,8 +102,10 @@ class DBTableTimed(DBTable):
                     missing_columns.append('{}": "{}'.format(i, j))
                 elif nd is True and j is not None:
                     self.reference.append(j)
+                    self.inputvars.append(i)
                 elif nd is None and j is not None:
                     self.reference.append(j)
+                    self.inputvars.append(i)
             if len(extra_columns) > 0:
                 EXTRA_COLUMNS = '"' + '", "'.join(extra_columns) + '"'
             else:
@@ -114,22 +120,30 @@ class DBTableTimed(DBTable):
         else:
             raise ObtainDataError('Mode invalid for "{}". Expected "{}"'.format(self.__class__.__name__, '", "'.join([str(i) for i in self._VALID_MODES[self.mode]])))
 
-    def _obtain_data(self, mapping): ##TODO IMPLEMENT
-        col_values = {c: self._format_for_query(mapping[c]) for c in mapping.columns.values}
+
+    def _format_for_query_multiple(self, values):
+        if isinstance(values, pd.core.frame.DataFrame):
+            return ', '.join([ "('" + "', '".join([str(i) if not isinstance(i, pd.Series.dt) else i.strftime("'%Y-%m-%d'") for i in els ]) + "')" for els in zip(*[values[r] for r in self.reference])])
+        elif isinstance(values, pd.core.series.Series):
+            values = [str(i) for i in set(values)]
+            return  "('" + "'), ('".join(values) + "')"
+
+    def _obtain_data(self, mapping):
+        references = self._format_for_query_multiple(mapping)
+        referencevars = ','.join(self.inputvars)
         ## the rules
-        if mode is None:
-            # the basic
-            pass
-        elif mode == 'after':
-            WHERE_CLAUSE = '{VARIABLE} > DATEADD(DAY, {DELAY}, ref_date)'
-        elif mode == 'before':
-            WHERE_CLAUSE = '{VARIABLE} < DATEADD(DAY, {DELAY}, ref_date)'
-        elif mode == 'between':
-            WHERE_CLAUSE = 'BETWEEN {VARIABLE} BETWEEN begin_date AND end_date'
-        elif mode == 'outside':
-            WHERE_CLAUSE = '{VARIABLE} < begin_date or {VARIABLE} > end_date'
-        self.query.format(WHERE=WHERE_CLAUSE.format(VARIABLE='', DELAY=self.delay))
-        ## 
+        if self.mode is None:
+            WHERE_CLAUSE = ''
+        elif self.mode == 'after':
+            WHERE_CLAUSE = 'WHERE {DATEVARIABLE} > DATEADD(DAY, {DELAY}, filtering_part.ref_date)'
+        elif self.mode == 'before':
+            WHERE_CLAUSE = 'WHERE {DATEVARIABLE} < DATEADD(DAY, {DELAY}, filtering_part.ref_date)'
+        elif self.mode == 'between':
+            WHERE_CLAUSE = 'WHERE {DATEVARIABLE} BETWEEN DATEADD(DAY, {DELAY}, filtering_part.begin_date) AND DATEADD(DAY, {DELAY}, filtering_part.end_date)'
+        elif self.mode == 'outside':
+            WHERE_CLAUSE = 'WHERE {DATEVARIABLE} < filtering_part.begin_date or {DATEVARIABLE} > filtering_part.end_date'
+        op = 'min' if self.first_presence is True else 'max'
+        sql = self.query.replace('{OPERATION}', op).format(references=references, referencevars=referencevars, WHERE=WHERE_CLAUSE.replace('{DELAY}', self.delay if self.delay else '0').replace('{DATEVARIABLE}', self.table_date_variable), DATEVARIABLE=self.table_date_variable)
         return pd.read_sql_query(sql, con=self.engine)
 
 
@@ -313,8 +327,10 @@ class DataCollector:
                 start_time = time.time()
                 ndf = d.obtain_data(chunk[d.reference])
                 internal_time = time.time()
-                ndf[d.reference] = ndf[d.reference].astype('str')
-                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
+                if type(d.reference) is list: #TODO maybe another more elegant way?
+                    chunk = chunk.merge(ndf, on=d.reference[0], how='left', copy=False)
+                else:
+                    chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
                 if self.verbose:
                     print("|- Internal processing took {}s".format(time.time() - internal_time))
                     print("|- Source '{}' took {}s".format(d.__class__.__name__, time.time() - start_time))
