@@ -65,11 +65,11 @@ class DBTable:
 
 class DBTableTimed(DBTable):
     # the modes contain the possible variables: begin_date, end_date, ref_date, delay
-    _VALID_MODES = {None: [False, False, False, False],
-                   'between': [True, True, False, None],
-                   'outside': [True, True, False, None],
-                   'before': [False, False, True, None],
-                   'after': [False, False, True, None]
+    _VALID_MODES = {None: [False, False, False],
+                   'between': [True, True, False],
+                   'outside': [True, True, False],
+                   'before': [False, False, True],
+                   'after': [False, False, True]
                    }
 
     def __init__(self, reference, query, engine=None, rename=True, name=None, mode=None, begin_date=None, end_date=None, ref_date=None, delay=None, first_presence=None, table_date_variable=None):
@@ -78,7 +78,7 @@ class DBTableTimed(DBTable):
         self.begin_date = begin_date
         self.end_date = end_date
         self.ref_date = ref_date
-        self.delay = str(int(delay)) if delay else None
+        self.delay = str(int(delay)) if delay else '0'
         self.reference = [reference]
         self.inputvars = [reference]
         self.first_presence = first_presence
@@ -92,7 +92,7 @@ class DBTableTimed(DBTable):
             """
             missing_columns = list()
             extra_columns = list()
-            for st, nd in zip([('begin_date', begin_date), ('end_date', end_date), ('ref_date', ref_date), ('delay', delay)], mode_setup):
+            for st, nd in zip([('begin_date', begin_date), ('end_date', end_date), ('ref_date', ref_date)], mode_setup):
                 i, j = st
                 if nd is False and j is None:
                     continue
@@ -101,9 +101,6 @@ class DBTableTimed(DBTable):
                 elif nd is True and j is None:
                     missing_columns.append('{}": "{}'.format(i, j))
                 elif nd is True and j is not None:
-                    self.reference.append(j)
-                    self.inputvars.append(i)
-                elif nd is None and j is not None:
                     self.reference.append(j)
                     self.inputvars.append(i)
             if len(extra_columns) > 0:
