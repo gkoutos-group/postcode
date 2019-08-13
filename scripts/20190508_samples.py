@@ -28,7 +28,7 @@ def db_get2(FILE):
     return pd.read_csv(FILE, chunksize=4096)
 
 
-d = DataCollector(db_get, sources=[Income(engine)] + [i for i in Crime.get_tables(engine)] + [i for i in Census11.get_tables(engine)], reference_check_engine=engine)
+d = DataCollector(db_get, sources=[Income(engine)] + [i for i in Crime.get_tables(engine)] + [i for i in Census11.get_tables(engine)], reference_sources=[PostcodeMapping], reference_engines=[engine])
 e = pd.concat([i for i in d.collect()]) #only use concat if the data can fit the memory
 print(e.head())
 print(e.columns.values)

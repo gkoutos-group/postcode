@@ -59,7 +59,7 @@ class DBTable:
         sql_ret = self._obtain_data(mapping)
         self._obtain_post_checks(mapping, sql_ret) #post-checks related to the output
         if self.rename: # add names associated with this class
-            sql_ret.rename(columns=lambda x: self.name + '.' + x if x != self.reference and type(self.reference) is list and x not in self.reference else x, inplace=True)
+            sql_ret.rename(columns=lambda x: self.name + '.' + x if (type(x) is not list and x != self.reference) or (type(self.reference) is list and x not in self.reference) else x, inplace=True)
         return sql_ret
 
 
@@ -240,36 +240,40 @@ class Census11(DBCategory):
             yield DBTable('oa', Census11.query_format.replace('{table}', t), engine=engine, name='Census11_' + t)
     
 
-
-class PostcodeMapping(DBTable):
+class DBMapping(DBTable):
     """
-    This contains the functions for the different areas of mapping
+    Generic class for mapping of one variable to another
     """
-    AVAILABLE = ['pc', 'oa', 'lsoa', 'msoa', 'lad']
-    def matching_source(what_we_have, what_is_needed):
-        matching_we_have = list(set(what_we_have).intersection(set(PostcodeMapping.AVAILABLE)))
-        indexes_we_have = [PostcodeMapping.AVAILABLE.index(i) for i in matching_we_have]
+    AVAILABLE = []
+    def matching_source(cls, what_we_have, what_is_needed):
+        """
+        This function checks if we can match the needed variables using only the variables we have.
+        """
+        matching_we_have = list(set(what_we_have).intersection(set(cls.AVAILABLE)))
+        indexes_we_have = [cls.AVAILABLE.index(i) for i in matching_we_have]
         what_is_needed = list(what_is_needed)
-        index_is_needed = [PostcodeMapping.AVAILABLE.index(i) for i in what_is_needed]
+        index_is_needed = [cls.AVAILABLE.index(i) for i in what_is_needed]
         if min(indexes_we_have) < min(index_is_needed):
             return matching_we_have[indexes_we_have.index(min(indexes_we_have))]
         raise ObtainDataError('Not possible to find any/all the columns "{}". We were looking with these matching columns "{}" (out of "{}").'.format('", "'.join(what_is_needed), '", "'.join(matching_we_have), '", "'.join(what_we_have)))
-    
-    def __init__(self, from_variable, to_variables, engine, rename=False):
+
+    def __init__(self, from_variable, to_variables, engine, table=None):
+        if table is None or type(table) is not str:
+            raise ObtainDataError('DBMapping requires a table. Please re-implement {}'.format(self.__class__.__name__))
         # first check for invalid column specification
-        if type(from_variable) is not str or from_variable not in PostcodeMapping.AVAILABLE:
-            raise ObtainDataError('"{}" is not a str or not one of "{}".'.format(str(from_variable), '", "'.join(PostcodeMapping.AVAILABLE)))
+        if type(from_variable) is not str or from_variable not in self.AVAILABLE:
+            raise ObtainDataError('"{}" is not a str or not one of "{}".'.format(str(from_variable), '", "'.join(self.AVAILABLE)))
         if type(to_variables) is str:
             to_variables = [to_variables]
         if type(to_variables) is not list or any([type(i) is not str for i in to_variables]):
             raise ObtainDataError('to_variables must be str or a list of str')
         # check for not available columns
-        not_in_list = [i for i in to_variables if i not in PostcodeMapping.AVAILABLE]
+        not_in_list = [i for i in to_variables if i not in self.AVAILABLE]
         if len(not_in_list) > 0:
-            raise ObtainDataError('Some variables ("{}") we have no information, expected one of "{}".'.format('", "'.join(not_in_list), '", "'.join(PostcodeMapping.AVAILABLE)))
+            raise ObtainDataError('Some variables ("{}") we have no information, expected one of "{}".'.format('", "'.join(not_in_list), '", "'.join(self.AVAILABLE)))
         # check for invalid scale: always go from smaller to bigger
-        org = PostcodeMapping.AVAILABLE.index(from_variable)
-        if any([PostcodeMapping.AVAILABLE.index(i) <= org for i in to_variables]):
+        org = self.AVAILABLE.index(from_variable)
+        if any([self.AVAILABLE.index(i) <= org for i in to_variables]):
             raise ObtainDataError('Trying to get a variable ("{}") that is more specific or in the same level as the query one ("{}").'.format('", "'.format(to_variables), from_variable))
         super().__init__(from_variable, query="""
                          with filtering_part as (
@@ -277,23 +281,111 @@ class PostcodeMapping(DBTable):
                             from (values {references}) tempT({from_variable})
                          ),
                          new_variables as (
-                            select distinct "{from_variable}", "{to_variables}" from public.postcode_lookup11 where "{from_variable}" in {references_l}
+                            select distinct "{from_variable}", "{to_variables}" from {table} where "{from_variable}" in ({references_l})
                          )
                          select new_variables.* from filtering_part left join new_variables on filtering_part.{from_variable} = new_variables.{from_variable}
-                         """.replace('{from_variable}', from_variable).replace('{to_variables}', '","'.join(to_variables)), engine=engine, rename=False)
+                         """.replace('{table}', table).replace('{from_variable}', from_variable).replace('{to_variables}', '","'.join(to_variables)), engine=engine, rename=False)
+
+
+class PostcodeMapping(DBMapping):
+    """
+    This contains the functions for the different areas of mapping using the postcode are mapping
+    """
+    AVAILABLE = ['pc', 'oa', 'lsoa', 'msoa', 'lad']
+    def __init__(self, from_variable, to_variables, engine):
+        table = 'public.postcode_lookup11'
+        super().__init__(from_variable, to_variables, engine, table)
 
 
 class DataCollector:
     """
     Main class for data collection, this class will handle all the others
     """
-    def __init__(self, database_file_handler, sources=None, reference_check_engine=None, verbose=False):
+    def __init__(self, database_file_handler, sources=None, reference_sources=None, reference_engines=None, verbose=False):
         self.database_file_handler = database_file_handler
+        if type(sources) is not list:
+            sources = [sources]
         self.sources = sources
         self.checked = False
-        self.reference_check_engine = reference_check_engine
         self.verbose = verbose
-        
+        if reference_sources and reference_engines:
+            if len(reference_sources) != len(reference_engines):
+                raise ObtainDataError('The references sources and engines have different length.')
+            self._reference_engines = {i: j for i, j in zip(reference_sources, reference_engines)}
+        else:
+            self._reference_engines = None
+        self._build_reference_graph(reference_sources)
+
+    def _build_reference_graph(self, reference_sources):
+        """
+        This method builds a graph for future matching of columns
+        """
+        graph = dict()
+        if not reference_sources:
+            self.reference_graph = None
+            return
+        for i in reference_sources:
+            for a in i.AVAILABLE:
+                if a not in graph:
+                    graph[a] = {'neighbours': dict()}
+                for b in i.AVAILABLE:
+                    if a == b:
+                        continue
+                    if b not in graph[a]['neighbours']:
+                        graph[a]['neighbours'][b] = list()
+                    graph[a]['neighbours'][b].append(i)
+        self.reference_graph = graph
+
+    def _minimum_mapping(self, from_variables, to_variables):
+        graph = self.reference_graph
+        cur_elements = [(i, []) for i in from_variables]
+        target_paths = dict() #this will map target-paths
+        if graph:
+            while len(cur_elements) > 0:
+                ce, cpath = cur_elements.pop(0)
+                if ce not in graph or 'visited' in graph[ce]:
+                    continue
+                else:
+                    graph[ce]['visited'] = True
+                for i in graph[ce]['neighbours'].keys():
+                    if i in to_variables:
+                        if i not in target_paths:
+                            target_paths[i] = list()
+                        for m in graph[ce]['neighbours'][i]:
+                            target_paths[i].append((i, [(ce, m)] + cpath))
+                    else:
+                        for m in graph[ce]['neighbours'][i]:
+                            cur_elements.append((i, [(ce, m)] + cpath))
+        we_got = set([i for i in target_paths.keys()]).intersection(set(to_variables))
+        if len(we_got) < len(to_variables):
+            raise ObtainDataError('Not possible to map all the variables. We got "{}". We need "{}".'.format('", "'.join(we_got), '", "'.join(to_variables)))
+        # TODO: the next step can be made more efficient by obtaining the minimum cut, in here we are using the shortest path instead
+        currently_available = set()
+        target_summarized = dict() #format from_variables, to_variables, method
+        for target, options in target_paths.items():
+            op_len = sorted([(len(i[1]), i) for i in options])
+            target_path = op_len[0][1] # let's prioritize the smallest one
+            cur_source = target_path[1][0][0]
+            cur_method = target_path[1][0][1]
+            for i in range(0, len(target_path[1]) - 1):
+                cur_source = target_path[1][i+1][0]
+                cur_method = target_path[1][i+1][1]
+                cur_target = target_path[1][i][0]
+                target_summarized[len(target_summarized)] = {'source_variables': [cur_source], 'target_variables': [cur_target], 'method': cur_method}
+                cur_method = target_path[1][i][1]
+                cur_source = target_path[1][i][0]
+            cur_target = target
+            target_summarized[len(target_summarized)] = {'source_variables': [cur_source], 'target_variables': [cur_target], 'method': cur_method}
+        compiled_targets = dict()
+        for i in target_summarized.values():
+            query = (i['source_variables'][0], i['method'])
+            if query in compiled_targets:
+                compiled_targets[query] += i['target_variables']
+            else:
+                compiled_targets[query] = i['target_variables']
+        return compiled_targets
+
+
     def reference_check(self, columns):
         def _flatten(ll):
             ret = list()
@@ -305,12 +397,11 @@ class DataCollector:
             return ret
         missing_references = list(set(_flatten([i.reference for i in self.sources])) - set(columns))
         if len(missing_references) > 0: #if there are some reference columns which we dont have
-            match = PostcodeMapping.matching_source(columns, missing_references) #let's try to find them
-            if match: #if we can match add to the database operations
-                self.sources.insert(0, PostcodeMapping(match, missing_references, self.reference_check_engine))
-            else: #we have something missing
-                raise ObtainDataError('There are missing references! - "{}"'.format('", "'.join(missing_references)))
-        
+            compiled_targets = self._minimum_mapping(columns, missing_references)
+            for source, target_cols in compiled_targets.items():
+                source_cols, source_method = source
+                self.sources.insert(0, source_method(source_cols, target_cols, self._reference_engines[source_method]))
+
     def collect(self):
         # work in chunks
         # first add the new columns for a database
@@ -318,14 +409,19 @@ class DataCollector:
         for chunk in self.database_file_handler():
             start_chunk = time.time()
             if not self.checked:
+                dependency_check = time.time()
                 self.reference_check(chunk.columns.values)
                 self.checked = True
+                if self.verbose:
+                    print('|- Dependency resolution in {}s'.format(time.time() - dependency_check))
             for d in self.sources:
                 start_time = time.time()
                 ndf = d.obtain_data(chunk[d.reference])
                 internal_time = time.time()
+                print(chunk.columns.values)
+                print(ndf.columns.values)
                 if type(d.reference) is list: #TODO maybe another more elegant way?
-                    chunk = chunk.merge(ndf, on=d.reference[0], how='left', copy=False)
+                    chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
                 else:
                     chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
                 if self.verbose:
