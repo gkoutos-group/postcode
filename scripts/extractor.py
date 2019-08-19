@@ -18,7 +18,7 @@ class DBTable:
         self._number_cols = 0
         self._columns = []
         self.rename = rename
-        if name == None:
+        if name is None:
             name = self.__class__.__name__
         self.name = name
 
@@ -59,7 +59,7 @@ class DBTable:
         sql_ret = self._obtain_data(mapping)
         self._obtain_post_checks(mapping, sql_ret) #post-checks related to the output
         if self.rename: # add names associated with this class
-            sql_ret.rename(columns=lambda x: self.name + '.' + x if (type(x) is not list and x != self.reference) or (type(self.reference) is list and x not in self.reference) else x, inplace=True)
+            sql_ret.rename(columns=lambda x: self.name + '.' + x if (type(self.reference) is not list and x != self.reference) or (type(self.reference) is list and x not in self.reference) else x, inplace=True)
         return sql_ret
 
 
@@ -418,15 +418,19 @@ class DataCollector:
                 start_time = time.time()
                 ndf = d.obtain_data(chunk[d.reference])
                 internal_time = time.time()
-                print(chunk.columns.values)
-                print(ndf.columns.values)
+                # print(chunk.columns.values)
+                # print(ndf.columns.values)
                 if type(d.reference) is list: #TODO maybe another more elegant way?
-                    chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
+                    # TODO: enforce the need of the other references?
+                    # on_list = d.reference[0]
+                    # XXX this is a work around for problematic extractors
+                    on_list = list(set(ndf.columns.values).intersection(set(chunk.columns.values)))
+                    chunk = chunk.merge(ndf, on=on_list, how='left', copy=False)
                 else:
                     chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
                 if self.verbose:
                     print("|- Internal processing took {}s".format(time.time() - internal_time))
-                    print("|- Source '{}' took {}s".format(d.__class__.__name__, time.time() - start_time))
+                    print("|- Source '{}' took {}s".format(d, time.time() - start_time))
             if self.verbose:
                 print("Chunk took {}s".format(time.time() - start_chunk))
             yield chunk
