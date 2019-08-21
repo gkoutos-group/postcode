@@ -97,15 +97,15 @@ class DBTableTimed(DBTable):
     @param reference: reference variable
     @param query: the query to be adjusted
     @param engine: an sqlalchemy engine
-    @param rename:
-    @param name:
-    @param mode:
-    @param begin_date:
-    @param end_date:
-    @param ref_date:
-    @param delay:
-    @param first_presence:
-    @param table_date_variable:
+    @param rename: 
+    @param name: 
+    @param mode: 4 modes are possible: 'between' a range of dates; 'outside' a range of dates; 'before' a reference date; 'after' a reference date
+    @param begin_date: for modes 'between' and 'outside': this is the variable name that indicates the starting date range
+    @param end_date: for modes 'between' and 'outside': this is the variable name that indicates the ending date range
+    @param ref_date: for modes 'before' and 'after': this is the variable name that indicates the reference date used
+    @param delay: a negative or positive number to indicate the shift (in days) for the above dates
+    @param first_presence: by default operates on the maximal date, otherwise the minimal
+    @param table_date_variable: the table with the data
     """
     # the modes contain the possible variables: begin_date, end_date, ref_date, delay
     _VALID_MODES = {None: [False, False, False],
