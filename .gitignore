@@ -3,3 +3,6 @@ income/
 census2011/
 zip/
 *__pycache__*
+integrator.egg-info/
+dist/
+build/

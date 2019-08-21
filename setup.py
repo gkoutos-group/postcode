@@ -12,7 +12,7 @@ setuptools.setup(
         long_description=long_description,
         long_description_content_type='text/markdown',
         url='https://github.com/gkoutos_group/postcode',
-        packages=setup.find_packages(),
+        packages=setuptools.find_packages(),
         classifies=['Programming Language :: Python :: 3', 'Operating System :: OS Independent'],
 )
 
