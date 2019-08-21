@@ -147,6 +147,8 @@ class DataCollector:
             # for each source of data (this will include dependencies)
             for d in self.sources:
                 start_time = time.time()
+                if self.verbose:
+                    print("|- Collecting '{}'".format(d))
                 ndf = d.obtain_data(chunk[d.reference]) #obtain the data
                 internal_time = time.time()
                 # print(chunk.columns.values)
@@ -158,6 +160,6 @@ class DataCollector:
                     print("|- Internal processing took {}s".format(time.time() - internal_time))
                     print("|- Source '{}' took {}s".format(d, time.time() - start_time))
             if self.verbose:
-                print("Chunk took {}s".format(time.time() - start_chunk))
+                print("- Chunk took {}s".format(time.time() - start_chunk))
             yield chunk
 
