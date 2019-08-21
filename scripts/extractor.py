@@ -29,7 +29,7 @@ class DBTable:
         return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
         
     def _format_for_query(self, values):
-        values = [str(i) for i in set(values)]
+        values = [str(i) for i in set(values) if str(i) != ''] #XXX the if is a precaution against NULL values
         return  "('" + "'), ('".join(values) + "')"
 
     def _obtain_pre_checks(self, mapping):
@@ -419,15 +419,10 @@ class DataCollector:
                 ndf = d.obtain_data(chunk[d.reference])
                 internal_time = time.time()
                 # print(chunk.columns.values)
+                # print(chunk.head())
                 # print(ndf.columns.values)
-                if type(d.reference) is list: #TODO maybe another more elegant way?
-                    # TODO: enforce the need of the other references?
-                    # on_list = d.reference[0]
-                    # XXX this is a work around for problematic extractors
-                    on_list = list(set(ndf.columns.values).intersection(set(chunk.columns.values)))
-                    chunk = chunk.merge(ndf, on=on_list, how='left', copy=False)
-                else:
-                    chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
+                # print(ndf.head())
+                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
                 if self.verbose:
                     print("|- Internal processing took {}s".format(time.time() - internal_time))
                     print("|- Source '{}' took {}s".format(d, time.time() - start_time))
