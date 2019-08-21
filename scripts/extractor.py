@@ -11,6 +11,15 @@ class ObtainDataError(Exception):
 
 
 class DBTable:
+    """
+    This is a generic extractor for a table. This needs to be derived to create an extractor for another table.
+
+    @param reference: reference variable (to be used from a reference pandas data frame)
+    @param query: query to be run against the engine
+    @param engine: an sqlalchemy engine
+    @param rename: if we should rename the returned table (instead of the class name) to name
+    @param name: name to show on the returned data
+    """
     def __init__(self, reference, query, engine=None, rename=True, name=None):
         self.reference = reference
         self.engine = engine
@@ -18,25 +27,40 @@ class DBTable:
         self._number_cols = 0
         self._columns = []
         self.rename = rename
-        if name is None:
+        if name is None: #if there is no name we aare going to use the default behaviour
             name = self.__class__.__name__
         self.name = name
 
     def __str__(self):
+        """
+        Format the str call to "{given name}: {references}"
+        """
         return '{}: {}'.format(self.name, self.reference)
 
     def __repr__(self):
+        """
+        The implicit name of the object changed to "<str() @ addr>"
+        """
         return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
         
     def _format_for_query(self, values):
+        """
+        Prepares the values to fit the SQL query
+        """
         values = [str(i) for i in set(values) if str(i) != ''] #XXX the if is a precaution against NULL values
         return  "('" + "'), ('".join(values) + "')"
 
     def _obtain_pre_checks(self, mapping):
+        """
+        Some pre-checks before execution.
+        """
         if self.engine is None:
             raise ObtainDataError('Engine is not defined')
 
     def _obtain_post_checks(self, mapping, sql_ret):
+        """
+        Checks after the data collection.
+        """
         if self._number_cols is 0: # if not data was extracted before let's define the number of columns and the order
             self._number_cols = len(sql_ret.columns.values) - 1
             self._columns = sql_ret.columns.values
@@ -48,12 +72,15 @@ class DBTable:
             raise ObtainDataError('Invalid number of rows returned. We have more rows returned ({}) than requested ({}). Deactivate {}'.format(len(sql_ret), len(mapping), self.__class__.__name__))
 
     def _obtain_data(self, mapping):
+        """
+        Main iteraction loop, format the query and collects the data
+        """
         sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping))
         return pd.read_sql_query(sql, con=self.engine)
     
     def obtain_data(self, mapping):
         """
-        Obtain data for a set of mapping values
+        Obtain data for a set of mapping values. Pre-checks, collection and post-checks are executed in order.
         """
         self._obtain_pre_checks(mapping) #pre-checks related to input or current state
         sql_ret = self._obtain_data(mapping)
@@ -64,6 +91,22 @@ class DBTable:
 
 
 class DBTableTimed(DBTable):
+    """
+    Definition for the extraction of data related to some time point or interval.
+
+    @param reference: reference variable
+    @param query: the query to be adjusted
+    @param engine: an sqlalchemy engine
+    @param rename:
+    @param name:
+    @param mode:
+    @param begin_date:
+    @param end_date:
+    @param ref_date:
+    @param delay:
+    @param first_presence:
+    @param table_date_variable:
+    """
     # the modes contain the possible variables: begin_date, end_date, ref_date, delay
     _VALID_MODES = {None: [False, False, False],
                    'between': [True, True, False],
@@ -86,6 +129,9 @@ class DBTableTimed(DBTable):
         self._check_settings()
 
     def _check_settings(self):
+        """
+        On startup check for the valid extraction modes
+        """
         def _check_columns(begin_date, end_date, ref_date, delay, mode_setup):
             """
             Check for wrong variables passage given the mode
@@ -94,7 +140,7 @@ class DBTableTimed(DBTable):
             extra_columns = list()
             for st, nd in zip([('begin_date', begin_date), ('end_date', end_date), ('ref_date', ref_date)], mode_setup):
                 i, j = st
-                if nd is False and j is None:
+                if nd is False and j is None: #the options are from the _VALID_MODES settings
                     continue
                 elif nd is False and j is not None:
                     extra_columns.append('{}": "{}'.format(i, j))
@@ -119,13 +165,19 @@ class DBTableTimed(DBTable):
 
 
     def _format_for_query_multiple(self, values):
+        """
+        Formats the values to the multiple references required.
+        """
         if isinstance(values, pd.core.frame.DataFrame):
             return ', '.join([ "('" + "', '".join([str(i) if not isinstance(i, pd.Series.dt) else i.strftime("'%Y-%m-%d'") for i in els ]) + "')" for els in zip(*[values[r] for r in self.reference])])
         elif isinstance(values, pd.core.series.Series):
-            values = [str(i) for i in set(values)]
+            values = [str(i) for i in set(values) if str(i) != ''] # copy-pasta of super class behaviour
             return  "('" + "'), ('".join(values) + "')"
 
     def _obtain_data(self, mapping):
+        """
+        When obtaining data using time reference we need to correct some terms in the query.
+        """
         references = self._format_for_query_multiple(mapping)
         referencevars = ','.join(self.inputvars)
         ## the rules
@@ -145,6 +197,11 @@ class DBTableTimed(DBTable):
 
 
 class Income(DBTable):
+    """
+    Income table from postcode information.
+
+    @param engine: an sqlalchemy engine
+    """
     def __init__(self, engine):
         super().__init__('msoa', query="""
                          with filtering_part as (
@@ -159,6 +216,11 @@ class Income(DBTable):
 
 
 class CrimesOutcome(DBTable):
+    """
+    Outcomes of crimes associated with lsoa.
+
+    @param engine: and sqlalchemy engine
+    """
     def __init__(self, engine):
         super().__init__('lsoa', query="""
                          with filtering_part as (
@@ -173,6 +235,12 @@ class CrimesOutcome(DBTable):
 
 
 class IndexMultipleDeprivation(DBTable):
+    """
+    Index of multiple deprivation. It shows different scores for difference aspects of a region. It is mapped with lsoa.
+
+    @param engine: an sqlalchemy engine
+    @param mode: 'everything' - all the scores; 'only_scores' - only the main IMD score
+    """
     def __init__(self, engine, mode='everything'):
         modes = ['everything', 'only_scores']
         if mode == 'everything':
@@ -201,6 +269,11 @@ class IndexMultipleDeprivation(DBTable):
 
 
 class CrimesStreet(DBTable):
+    """
+    Crimes in streets associated with lsoa.
+
+    @param engine: and sqlalchemy engine
+    """
     def __init__(self, engine):
         super().__init__('lsoa', query="""
                          with filtering_part as (
@@ -215,17 +288,35 @@ class CrimesStreet(DBTable):
 
 
 class DBCategory:
+    """
+    A groupper class for different sources of data.
+    """
     def get_tables(engine=None):
+        """
+        get_tables yields different sources
+
+        @param engine: an sqlalchemy engine
+        """
         yield
         
 
 class Crime(DBCategory):
+    """
+    Grouped variables for crime.
+    """
     def get_tables(engine):
+        """
+        get_tables yields CrimesOutcome and CrimesStreet
+        @param engine: an sqlalchemy engine
+        """
         yield CrimesOutcome(engine)
         yield CrimesStreet(engine)
 
 
 class Census11(DBCategory):
+    """
+    Returns all the data extractor for census variables.
+    """
     query_format = """with filtering_part as (
                             select *
                             from (values {references}) tempT(oa)
@@ -236,18 +327,31 @@ class Census11(DBCategory):
                          select condition.* from filtering_part left join condition on filtering_part.oa = condition.oa"""
     options = ['adults_not_employment_etc', 'age_structure', 'car_etc', 'census_industry', 'communal_etc', 'country_birth', 'dwellings_etc', 'economic_etc', 'ethnic_group', 'health_unpaid_care', 'hours_worked', 'household_composition', 'household_language', 'living_arrangements', 'lone_parents_household_etc', 'marital_and_civil_partnership_status', 'national_identity', 'nssec_etc', 'occupation_sex', 'passports_held', 'qualifications_students', 'religion', 'rooms_etc', 'tenure', 'usual_resident_population']
     def get_tables(engine):
+        """
+        get_tables yields quite a few options enumerated in Census11.options
+
+        @param engine: an sqlalchemy engine
+        """
         for t in Census11.options:
             yield DBTable('oa', Census11.query_format.replace('{table}', t), engine=engine, name='Census11_' + t)
     
 
 class DBMapping(DBTable):
     """
-    Generic class for mapping of one variable to another
+    Generic class for mapping of one variable to another using a reference table.
+
+    @param from_variable: the source variable(s) used
+    @param to_variable: the target variable(s) needed
+    @param engine: an sqlalchemy engine
+    @param table: referece table
     """
     AVAILABLE = []
     def matching_source(cls, what_we_have, what_is_needed):
         """
         This function checks if we can match the needed variables using only the variables we have.
+
+        @param what_we_have: the source variables we will use
+        @param what_is_needed: the target variables needed from this table
         """
         matching_we_have = list(set(what_we_have).intersection(set(cls.AVAILABLE)))
         indexes_we_have = [cls.AVAILABLE.index(i) for i in matching_we_have]
@@ -287,9 +391,13 @@ class DBMapping(DBTable):
                          """.replace('{table}', table).replace('{from_variable}', from_variable).replace('{to_variables}', '","'.join(to_variables)), engine=engine, rename=False)
 
 
-class PostcodeMapping(DBMapping):
+class PostcodeMapping(DBMapping): #XXX if mapping one bigger to smaller there might be issues!
     """
-    This contains the functions for the different areas of mapping using the postcode are mapping
+    This contains the functions for the different areas of mapping using the postcode are mapping. The mappings are: pc, oa, lsoa, msoa, lad
+
+    @param from_variable: the source variables
+    @param to_variables: the target variables
+    @param engine: an sqlalchemy engine
     """
     AVAILABLE = ['pc', 'oa', 'lsoa', 'msoa', 'lad']
     def __init__(self, from_variable, to_variables, engine):
@@ -299,16 +407,22 @@ class PostcodeMapping(DBMapping):
 
 class DataCollector:
     """
-    Main class for data collection, this class will handle all the others
+    Main class for data collection, this class will handle all the others.
+
+    @param database_file_handler: this is a function that yields data blocks
+    @param sources: the difference data sources used
+    @param reference_sources (list of DBMapping classes): these are the classes that map different reference variables
+    @param reference_engines (list of sqlalchemy engines): the engines to be used by the respective list of reference sources
+    @param verbose: output some (minimal) verbose information
     """
     def __init__(self, database_file_handler, sources=None, reference_sources=None, reference_engines=None, verbose=False):
         self.database_file_handler = database_file_handler
-        if type(sources) is not list:
+        if type(sources) is not list: #we are avoiding issues here
             sources = [sources]
         self.sources = sources
         self.checked = False
         self.verbose = verbose
-        if reference_sources and reference_engines:
+        if reference_sources and reference_engines: #if we possibly doing mapping we need the same number of reference mappers and engine to use with them
             if len(reference_sources) != len(reference_engines):
                 raise ObtainDataError('The references sources and engines have different length.')
             self._reference_engines = {i: j for i, j in zip(reference_sources, reference_engines)}
@@ -318,7 +432,9 @@ class DataCollector:
 
     def _build_reference_graph(self, reference_sources):
         """
-        This method builds a graph for future matching of columns
+        This method builds a graph for future matching of columns.
+
+        @param reference_sources: the references used for dependency resolution
         """
         graph = dict()
         if not reference_sources:
@@ -337,6 +453,12 @@ class DataCollector:
         self.reference_graph = graph
 
     def _minimum_mapping(self, from_variables, to_variables):
+        """
+        This creates reference variables mapping using the minimum number of jumps possible.
+
+        @param from_variables: the source variables
+        @param to_variables: the variables we need
+        """
         graph = self.reference_graph
         cur_elements = [(i, []) for i in from_variables]
         target_paths = dict() #this will map target-paths
@@ -364,7 +486,7 @@ class DataCollector:
         target_summarized = dict() #format from_variables, to_variables, method
         for target, options in target_paths.items():
             op_len = sorted([(len(i[1]), i) for i in options])
-            target_path = op_len[0][1] # let's prioritize the smallest one
+            target_path = op_len[0][1] # let's use the smallest one
             cur_source = target_path[1][0][0]
             cur_method = target_path[1][0][1]
             for i in range(0, len(target_path[1]) - 1):
@@ -376,6 +498,7 @@ class DataCollector:
                 cur_source = target_path[1][i][0]
             cur_target = target
             target_summarized[len(target_summarized)] = {'source_variables': [cur_source], 'target_variables': [cur_target], 'method': cur_method}
+        # the values are compiled to reduce the number of queries
         compiled_targets = dict()
         for i in target_summarized.values():
             query = (i['source_variables'][0], i['method'])
@@ -385,8 +508,12 @@ class DataCollector:
                 compiled_targets[query] = i['target_variables']
         return compiled_targets
 
-
     def reference_check(self, columns):
+        """
+        Checks if the needed references can be found.
+
+        @param columns: the columns we have currently
+        """
         def _flatten(ll):
             ret = list()
             for i in ll:
@@ -403,31 +530,36 @@ class DataCollector:
                 self.sources.insert(0, source_method(source_cols, target_cols, self._reference_engines[source_method]))
 
     def collect(self):
-        # work in chunks
-        # first add the new columns for a database
-        # add the values
+        """
+        Collects the data each by chunk.
+
+        For each chunk:
+        1. add new columns from the dependency checks
+        2. add new columns requested
+        """
         for chunk in self.database_file_handler():
             start_chunk = time.time()
+            # if it is a first run we need a column dependency check
             if not self.checked:
                 dependency_check = time.time()
                 self.reference_check(chunk.columns.values)
                 self.checked = True
                 if self.verbose:
                     print('|- Dependency resolution in {}s'.format(time.time() - dependency_check))
+            # for each source of data (this will include dependencies)
             for d in self.sources:
                 start_time = time.time()
-                ndf = d.obtain_data(chunk[d.reference])
+                ndf = d.obtain_data(chunk[d.reference]) #obtain the data
                 internal_time = time.time()
                 # print(chunk.columns.values)
                 # print(chunk.head())
                 # print(ndf.columns.values)
                 # print(ndf.head())
-                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False)
+                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False) #merge the data using the reference variables
                 if self.verbose:
                     print("|- Internal processing took {}s".format(time.time() - internal_time))
                     print("|- Source '{}' took {}s".format(d, time.time() - start_time))
             if self.verbose:
                 print("Chunk took {}s".format(time.time() - start_chunk))
             yield chunk
-
 
