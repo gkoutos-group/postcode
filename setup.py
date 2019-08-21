@@ -14,5 +14,6 @@ setuptools.setup(
         url='https://github.com/gkoutos_group/postcode',
         packages=setuptools.find_packages(),
         classifies=['Programming Language :: Python :: 3', 'Operating System :: OS Independent'],
+        install_requires=['pandas', 'SQLalchemy']
 )
 
