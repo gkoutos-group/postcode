@@ -94,6 +94,8 @@ class DBTableTimed(DBTable):
     """
     Definition for the extraction of data related to some time point or interval.
 
+    The internal variable list (self.reference) expects the elements self.reference[1:] to be dates.
+
     @param reference: reference variable
     @param query: the query to be adjusted
     @param engine: an sqlalchemy engine
@@ -192,8 +194,13 @@ class DBTableTimed(DBTable):
         elif self.mode == 'outside':
             WHERE_CLAUSE = 'WHERE {DATEVARIABLE} < filtering_part.begin_date or {DATEVARIABLE} > filtering_part.end_date'
         op = 'min' if self.first_presence is True else 'max'
-        sql = self.query.replace('{OPERATION}', op).format(references=references, referencevars=referencevars, WHERE=WHERE_CLAUSE.replace('{DELAY}', self.delay if self.delay else '0').replace('{DATEVARIABLE}', self.table_date_variable), DATEVARIABLE=self.table_date_variable)
-        return pd.read_sql_query(sql, con=self.engine)
+        AS_TERM = ''
+        GROUPBY_TERM = ''
+        for we_have, in_dataset in zip(self.reference[1:], self.inputvars[1:]): #this is going to be added for the passage back
+            AS_TERM += ', filtering_part.{GIVEN_NAME} AS {DATASET_NAME}'.format(GIVEN_NAME=in_dataset, DATASET_NAME=we_have)
+            GROUPBY_TERM += ', filtering_part.{GIVEN_NAME}'.format(GIVEN_NAME=in_dataset)
+        sql = self.query.replace('{AS_TERM}', AS_TERM).replace('{GROUPBY_TERM}', GROUPBY_TERM).replace('{OPERATION}', op).format(references=references, referencevars=referencevars, WHERE=WHERE_CLAUSE.replace('{DELAY}', self.delay if self.delay else '0').replace('{DATEVARIABLE}', self.table_date_variable), DATEVARIABLE=self.table_date_variable)
+        return pd.read_sql_query(sql, con=self.engine, parse_dates=self.reference[1:])
 
 
 class Income(DBTable):
