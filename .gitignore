@@ -2,3 +2,4 @@ crime/
 income/
 census2011/
 zip/
+*__pycache__*
