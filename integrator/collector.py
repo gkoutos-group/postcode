@@ -101,6 +101,7 @@ class DataCollector:
             cur_target = target
             target_summarized[len(target_summarized)] = {'source_variables': [cur_source], 'target_variables': [cur_target], 'method': cur_method}
         # the values are compiled to reduce the number of queries
+        index = list()
         compiled_targets = dict()
         for i in target_summarized.values():
             query = (i['source_variables'][0], i['method'])
@@ -108,7 +109,8 @@ class DataCollector:
                 compiled_targets[query] += i['target_variables']
             else:
                 compiled_targets[query] = i['target_variables']
-        return compiled_targets
+                index.append(query)
+        return [(i, compiled_targets[i]) for i in index]
 
     def reference_check(self, columns):
         """
@@ -128,8 +130,10 @@ class DataCollector:
         if len(missing_references) > 0: #if there are some reference columns which we dont have
             compiled_targets = self._minimum_mapping(columns, missing_references)
             index_ref = 0
-            for source, target_cols in compiled_targets.items():
+            for source, target_cols in compiled_targets:
                 source_cols, source_method = source
+                if self.verbose:
+                    print("|- Dependency: {} -> '{}' ({})".format(source_cols, "', '".join(target_cols), source_method))
                 self.sources.insert(index_ref, source_method(source_cols, target_cols, self._reference_engines[source_method]))
                 index_ref += 1
 
