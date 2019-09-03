@@ -1,4 +1,8 @@
 
+"""
+Class definition for the handling of the main data collector
+"""
+
 import time
 from integrator.util import ObtainDataError
 

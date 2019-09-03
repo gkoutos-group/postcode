@@ -1,6 +1,6 @@
 
 """
-This file is part of postcode for some needed class
+Useful classes
 """
 
 class ObtainDataError(Exception):

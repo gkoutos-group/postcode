@@ -1,4 +1,8 @@
 
+"""
+Definition of sources associated with postcode
+"""
+
 from integrator.tables import DBTable, DBCategory
 from integrator.util import ObtainDataError
 

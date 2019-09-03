@@ -1,4 +1,8 @@
 
+"""
+Definition of mapping classes
+"""
+
 from .tables import DBTable
 from .util import ObtainDataError
 

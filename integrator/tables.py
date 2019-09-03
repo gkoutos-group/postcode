@@ -1,4 +1,9 @@
 
+"""
+Definition of main types of extractors
+"""
+
+
 import pandas as pd
 from integrator.util import ObtainDataError
 

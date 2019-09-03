@@ -1,4 +1,7 @@
 
+"""
+Definition of class for postcode mapping
+"""
 
 from integrator.mapping import DBMapping
 
