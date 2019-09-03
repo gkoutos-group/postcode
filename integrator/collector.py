@@ -127,9 +127,11 @@ class DataCollector:
         missing_references = list(set(_flatten([i.reference for i in self.sources])) - set(columns))
         if len(missing_references) > 0: #if there are some reference columns which we dont have
             compiled_targets = self._minimum_mapping(columns, missing_references)
+            index_ref = 0
             for source, target_cols in compiled_targets.items():
                 source_cols, source_method = source
-                self.sources.insert(0, source_method(source_cols, target_cols, self._reference_engines[source_method]))
+                self.sources.insert(index_ref, source_method(source_cols, target_cols, self._reference_engines[source_method]))
+                index_ref += 1
 
     def collect(self):
         """
