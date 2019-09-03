@@ -6,3 +6,4 @@ zip/
 integrator.egg-info/
 dist/
 build/
+*.pyc
