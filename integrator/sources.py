@@ -54,7 +54,7 @@ class IndexMultipleDeprivation(DBTable):
                             select lsoa, "IOMDIS" as IMD
                             from public.indexmultipledeprivation
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.mapping = condition.lsoa"""
+                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa"""
         else:
             raise ObtainDataError('Invalid mode for "{}", please select one of: "{}"'.format(self.__class__.__name__, '", "'.join(modes)))
         super().__init__('lsoa', query=query, engine=engine)
