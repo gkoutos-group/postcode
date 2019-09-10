@@ -38,6 +38,7 @@ class DataCollector:
 
         @param reference_sources: the references used for dependency resolution
         """
+        # print('- Building reference graph.')
         graph = dict()
         if not reference_sources:
             self.reference_graph = None
@@ -47,11 +48,21 @@ class DataCollector:
                 if a not in graph:
                     graph[a] = {'neighbours': dict()}
                 for b in i.AVAILABLE:
+                    # if it is the same variable skip
                     if a == b:
                         continue
+                    # check if the variable is valid
+                    try:
+                        # print('|- {} -> {}'.format(a,b), end=' ')
+                        i.check_variables_interaction(from_variable=a, to_variables=b)
+                    except Exception as e:
+                        # print('fail - ', e)
+                        continue
+                    # print('ok')
+                    # add to the neighbours
                     if b not in graph[a]['neighbours']:
                         graph[a]['neighbours'][b] = list()
-                    graph[a]['neighbours'][b].append(i)
+                    graph[a]['neighbours'][b].append(i) #format: graph [source] "neighbours" [target] = [methods]
         self.reference_graph = graph
 
     def _minimum_mapping(self, from_variables, to_variables):
