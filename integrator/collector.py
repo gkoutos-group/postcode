@@ -156,6 +156,16 @@ class DataCollector:
         1. add new columns from the dependency checks
         2. add new columns requested
         """
+        start = time.time()
+        for i in self._collect():
+            yield i
+        if self.verbose:
+            print('- Extraction took {:.2f}s'.format(time.time() - start))
+
+    def _collect(self):
+        """
+        Internal handling of the chunk collection.
+        """
         for chunk in self.database_file_handler():
             start_chunk = time.time()
             # if it is a first run we need a column dependency check
