@@ -28,6 +28,7 @@ class DBTable:
         if name is None: #if there is no name we aare going to use the default behaviour
             name = self.__class__.__name__
         self.name = name
+        self._query_sql = None
 
     def __str__(self):
         """
@@ -73,8 +74,8 @@ class DBTable:
         """
         Main iteraction loop, format the query and collects the data
         """
-        sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping))
-        return pd.read_sql_query(sql, con=self.engine)
+        self._query_sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping))
+        return pd.read_sql_query(self._query_sql, con=self.engine)
     
     def obtain_data(self, mapping):
         """
