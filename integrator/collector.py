@@ -4,6 +4,8 @@ Class definition for the handling of the main data collector
 """
 
 import time
+import pandas as pd
+import os.path
 from integrator.util import ObtainDataError
 
 
@@ -161,6 +163,32 @@ class DataCollector:
             yield i
         if self.verbose:
             print('- Extraction took {:.2f}s'.format(time.time() - start))
+
+    def collect_to_file(self, output_file, filtering_function=None, ignore_file_exists=False, sep=',', index=False):
+        """
+        Collects all the data, does the filtering function on the data and saves it to file. After saving the dataframe is returned.
+
+        @param output_file: output file
+        @param filtering_function: function that will be called with the dataframe (it must return the dataframe) or None
+        @param sep: separator for the output file
+        """
+        if os.path.isfile(output_file) and not ignore_file_exists:
+            raise ObtainDataError('Output file already exists: "{}".'.format(output_file))
+        all_df = list()
+        for i in self.collect():
+            if filtering_function:
+                i = filtering_function(i)
+            all_df.append(i)
+        start = time.time()
+        if self.verbose:
+            print('|- Concatenating data frame.')
+        all_df = pd.concat(all_df)
+        if self.verbose:
+            print('|- Saving file...', end='')
+        all_df.to_csv(output_file, sep=sep, index=index)
+        if self.verbose:
+            print(' saved! Dataframe processing took {:.2f}s'.format(time.time() - start))
+        return all_df
 
     def _collect(self):
         """
