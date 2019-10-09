@@ -214,7 +214,10 @@ class DataCollector:
                 # print(chunk.head())
                 # print(ndf.columns.values)
                 # print(ndf.head())
-                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False, validate='many_to_one') #merge the data using the reference variables
+                try:
+                    chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False, validate='many_to_one') #merge the data using the reference variables
+                except pd.errors.MergeError as e:
+                    raise ObtainDataError("Data extractor '{}' failed. There are duplicate elements. Please disable it. Duplicated elements are '{}'.".format(d, "', '".join([str(i) for i in ndf[d.reference][ndf[d.reference].duplicated(keep=False)].unique()]))) from pd.errors.MergeError()
                 if self.verbose:
                     print("|- Source '{}' took {:.2f}s (internal processing {:.2f}s)".format(d, time.time() - start_time, time.time() - internal_time))
             if self.verbose:
