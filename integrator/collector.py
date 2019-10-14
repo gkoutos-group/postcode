@@ -17,9 +17,9 @@ class DataCollector:
     @param sources: the difference data sources used
     @param reference_sources (list of DBMapping classes): these are the classes that map different reference variables
     @param reference_engines (list of sqlalchemy engines): the engines to be used by the respective list of reference sources
-    @param verbose: output some (minimal) verbose information
+    @param verbose: output some verbose information
     """
-    def __init__(self, database_file_handler, sources=None, reference_sources=None, reference_engines=None, verbose=False):
+    def __init__(self, database_file_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True):
         self.database_file_handler = database_file_handler
         if type(sources) is not list: #we are avoiding issues here
             sources = [sources]
