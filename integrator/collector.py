@@ -20,7 +20,7 @@ class DataCollector:
     @param reference_sources (list of DBMapping classes): these are the classes that map different reference variables
     @param reference_engines (list of sqlalchemy engines): the engines to be used by the respective list of reference sources
     @param verbose: output some verbose information
-    @param chunksize (default 4*4096): the size of the chunk if the input database is a file
+    @param chunksize (default 4*4096): the size of the chunk if the input database is a file or a dataframe
     @param stop_after_chunk (default None): if it should stop collecting after a chunk
     """
     def __init__(self, database_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True, chunksize=4*4096, stop_after_chunk=None):
@@ -28,18 +28,12 @@ class DataCollector:
             if not os.path.isfile(database_handler):
                 raise ObtainDataError("Input file does not exist: '{}'! Or we don't have permission to read.".format(database_handler))
             def _db_get():
-                i = 0
                 for chunk in pd.read_csv(database_handler, chunksize=chunksize):
-                    i += 1
-                    if stop_after_chunk is not None and i > stop_after_chunk:
-                        raise StopIteration
                     yield chunk
             database_file_handler = _db_get
         elif isinstance(database_handler, pd.DataFrame): # pandas.DataFrame input
             def _db_get():
                 for i, j in database_handler.groupby(np.arange(len(database_handler))//chunksize):
-                    if stop_after_chunk is not None and i > stop_after_chunk:
-                        raise StopIteration
                     yield j
             database_file_handler = _db_get
         else: # function that yields chunks
@@ -57,6 +51,7 @@ class DataCollector:
         else:
             self._reference_engines = None
         self._build_reference_graph(reference_sources)
+        self.stop_after_chunk = stop_after_chunk
 
     def _build_reference_graph(self, reference_sources):
         """
@@ -183,8 +178,12 @@ class DataCollector:
         2. add new columns requested
         """
         start = time.time()
+        chunk_id = 0
         for i in self._collect():
             yield i
+            chunk_id += 1
+            if self.stop_after_chunk is not None and chunk_id >= self.stop_after_chunk:
+                return
         if self.verbose:
             print('- Extraction took {:.2f}s'.format(time.time() - start))
 
