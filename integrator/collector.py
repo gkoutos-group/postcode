@@ -5,7 +5,9 @@ Class definition for the handling of the main data collector
 
 import time
 import pandas as pd
+import numpy as np
 import os.path
+import copy
 from integrator.util import ObtainDataError
 
 
@@ -13,17 +15,39 @@ class DataCollector:
     """
     Main class for data collection, this class will handle all the others.
 
-    @param database_file_handler: this is a function that yields data blocks
+    @param database_file_handler (function that yields data blocks; string with csv dataset location; or pandas dataframe): the source data
     @param sources: the difference data sources used
     @param reference_sources (list of DBMapping classes): these are the classes that map different reference variables
     @param reference_engines (list of sqlalchemy engines): the engines to be used by the respective list of reference sources
     @param verbose: output some verbose information
+    @param chunksize (default 4*4096): the size of the chunk if the input database is a file
+    @param stop_after_chunk (default None): if it should stop collecting after a chunk
     """
-    def __init__(self, database_file_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True):
+    def __init__(self, database_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True, chunksize=4*4096, stop_after_chunk=None):
+        if type(database_handler) is str: # str input 
+            if not os.path.isfile(database_handler):
+                raise ObtainDataError("Input file does not exist: '{}'! Or we don't have permission to read.".format(database_handler))
+            def _db_get():
+                i = 0
+                for chunk in pd.read_csv(database_handler, chunksize=chunksize):
+                    i += 1
+                    if stop_after_chunk is not None and i > stop_after_chunk:
+                        raise StopIteration
+                    yield chunk
+            database_file_handler = _db_get
+        elif isinstance(database_handler, pd.DataFrame): # pandas.DataFrame input
+            def _db_get():
+                for i, j in database_handler.groupby(np.arange(len(database_handler))//chunksize):
+                    if stop_after_chunk is not None and i > stop_after_chunk:
+                        raise StopIteration
+                    yield j
+            database_file_handler = _db_get
+        else: # function that yields chunks
+            database_file_handler = database_handler
         self.database_file_handler = database_file_handler
         if type(sources) is not list: #we are avoiding issues here
             sources = [sources]
-        self.sources = sources
+        self.sources = copy.copy(sources)
         self.checked = False
         self.verbose = verbose
         if reference_sources and reference_engines: #if we possibly doing mapping we need the same number of reference mappers and engine to use with them
@@ -164,7 +188,15 @@ class DataCollector:
         if self.verbose:
             print('- Extraction took {:.2f}s'.format(time.time() - start))
 
-    def collect_to_file(self, output_file, filtering_function=None, ignore_file_exists=False, sep=',', index=False):
+    def collect_all(self, filtering_function=None):
+        all_df = list()
+        for i in self.collect():
+            if filtering_function:
+                i = filtering_function(i)
+            all_df.append(i)
+        return pd.concat(all_df)
+
+    def collect_to_file(self, output_file, filtering_function=None, ignore_file_exists=False, sep=',', index=False, return_dataset=True):
         """
         Collects all the data, does the filtering function on the data and saves it to file. After saving the dataframe is returned.
 
@@ -174,21 +206,27 @@ class DataCollector:
         """
         if os.path.isfile(output_file) and not ignore_file_exists:
             raise ObtainDataError('Output file already exists: "{}".'.format(output_file))
-        all_df = list()
-        for i in self.collect():
-            if filtering_function:
-                i = filtering_function(i)
-            all_df.append(i)
         start = time.time()
-        if self.verbose:
-            print('|- Concatenating data frame.')
-        all_df = pd.concat(all_df)
-        if self.verbose:
-            print('|- Saving file...', end='')
-        all_df.to_csv(output_file, sep=sep, index=index)
+        if return_dataset:
+            all_df = self.collect_all(filtering_function)
+            if self.verbose:
+                print('|- Saving file...', end='')
+            all_df.to_csv(output_file, sep=sep, index=index)
+        else:
+            first_save = True
+            for i in self.collect():
+                if filtering_function:
+                    i = filtering_function(i)
+                if first_save:
+                    i.to_csv(output_file, sep=sep, index=index)
+                    first_save = False
+                else:
+                    i.to_csv(output_file, sep=sep, index=index, mode='a', header=False)
+            print('Dataset', end='')
         if self.verbose:
             print(' saved! Dataframe processing took {:.2f}s'.format(time.time() - start))
-        return all_df
+        if return_dataset:
+            return all_df
 
     def _collect(self):
         """
