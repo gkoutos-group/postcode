@@ -189,6 +189,11 @@ class DataCollector:
             print('- Extraction took {:.2f}s'.format(time.time() - start))
 
     def collect_all(self, filtering_function=None):
+        """
+        Collect all the data, does the filtering function and returns the complete data frame.
+
+        @param filtering_function (default None): function that will be called with the dataframe (it must return the dataframe)
+        """
         all_df = list()
         for i in self.collect():
             if filtering_function:
@@ -198,11 +203,12 @@ class DataCollector:
 
     def collect_to_file(self, output_file, filtering_function=None, ignore_file_exists=False, sep=',', index=False, return_dataset=True):
         """
-        Collects all the data, does the filtering function on the data and saves it to file. After saving the dataframe is returned.
+        Collects all the data, does the filtering function on the data and saves it to file. After saving the dataframe may be returned with parameter 'return_dataset'.
 
         @param output_file: output file
-        @param filtering_function: function that will be called with the dataframe (it must return the dataframe) or None
+        @param filtering_function (default None): function that will be called with the dataframe (it must return the dataframe)
         @param sep: separator for the output file
+        @param return_dataset (default True): if the dataset is going to be returned after this function
         """
         if os.path.isfile(output_file) and not ignore_file_exists:
             raise ObtainDataError('Output file already exists: "{}".'.format(output_file))
