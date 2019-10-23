@@ -70,7 +70,9 @@ class DBMapping(DBTable):
                          new_variables as (
                             select distinct "{from_variable}", "{to_variables}" from {table} where "{from_variable}" in ({references_l})
                          )
-                         select new_variables.* from filtering_part left join new_variables on filtering_part.{from_variable} = new_variables.{from_variable}
+                         SELECT new_variables.* 
+                         FROM filtering_part left join new_variables on filtering_part.{from_variable} = new_variables.{from_variable}
+                         WHERE new_variables.{from_variable} IS NOT NULL
                          """.replace('{table}', table).replace('{from_variable}', from_variable).replace('{to_variables}', '","'.join(to_variables)), engine=engine, rename=False)
 
 
