@@ -22,8 +22,9 @@ class DataCollector:
     @param verbose: output some verbose information
     @param chunksize (default 4*4096): the size of the chunk if the input database is a file or a dataframe
     @param stop_after_chunk (default None): if it should stop collecting after a chunk
+    @param skip_missing: if the references are incomplete the row is going to be skipped: THIS MIGHT LEAD TO ADVERSE BEHAVIOURS: SUCH AS EMPTY QUERY/RETURN
     """
-    def __init__(self, database_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True, chunksize=4*4096, stop_after_chunk=None):
+    def __init__(self, database_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True, chunksize=4*4096, stop_after_chunk=None, skip_missing=False):
         if type(database_handler) is str: # str input 
             if not os.path.isfile(database_handler):
                 raise ObtainDataError("Input file does not exist: '{}'! Or we don't have permission to read.".format(database_handler))
@@ -52,6 +53,7 @@ class DataCollector:
             self._reference_engines = None
         self._build_reference_graph(reference_sources)
         self.stop_after_chunk = stop_after_chunk
+        self.skip_missing = skip_missing
 
     def _build_reference_graph(self, reference_sources):
         """
@@ -198,7 +200,7 @@ class DataCollector:
             if filtering_function:
                 i = filtering_function(i)
             all_df.append(i)
-        return pd.concat(all_df)
+        return pd.concat(all_df, sort=False)
 
     def collect_to_file(self, output_file, filtering_function=None, ignore_file_exists=False, sep=',', index=False, return_dataset=True):
         """
@@ -251,7 +253,32 @@ class DataCollector:
                 start_time = time.time()
                 if self.verbose:
                     print("|- Collecting '{}'".format(d), end='\r')
-                ndf = d.obtain_data(chunk[d.reference]) #obtain the data
+                # check for missing reference values
+                # # reference list
+                refs = d.reference
+                if type(refs) is not list:
+                    refs = [refs]
+                reference_missing = {}
+                for rc in refs:
+                    _n = np.sum(chunk[rc].isna().values)
+                    if _n > 0:
+                        reference_missing[rc] = _n
+                if len(reference_missing) > 0:
+                    err = 'Missing reference values for: {}'.format(';'.join(['"{}" ({})'.format(i,j) for i, j in reference_missing.items()])) + '.'
+                    if self.skip_missing and self.verbose:
+                        print('|* ' + err, end='\n\n')
+                    elif self.skip_missing is False:
+                        raise ObtainDataError(err + ' Please remove missing values.')
+                # if we should skip the missing:
+                chunk_search_data = chunk[d.reference]
+                if self.skip_missing:
+                    chunk_search_data = chunk_search_data.dropna()
+                # obtain the data
+                if len(chunk_search_data) == 0:
+                    print('|- Chunk with no data! Skipping!')
+                    ndf = pd.DataFrame(columns=d.reference)
+                else:
+                    ndf = d.obtain_data(chunk_search_data)
                 internal_time = time.time()
                 # print(chunk.columns.values)
                 # print(chunk.head())
