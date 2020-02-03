@@ -123,8 +123,8 @@ class DBTableTimed(DBTable):
         self.end_date = end_date
         self.ref_date = ref_date
         self.delay = str(int(delay)) if delay else '0'
-        self.reference = [reference]
-        self.inputvars = [reference]
+        self.reference = reference if type(reference) is list else [reference]
+        self.inputvars = reference if type(reference) is list else [reference]
         self.first_presence = first_presence
         self.table_date_variable = table_date_variable
         self._check_settings()
