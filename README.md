@@ -74,3 +74,11 @@ Execute the _20190502_postcode_sql.py_ script.
 ## Other
 
 Some Postgresql operations were done using DBeaver.
+
+## Improving it
+
+There are some things missing in this implementation:
+
+- Tests: both for function and returned data.
+- `DBTableTimed`: simplify/merge the behaviour for multiple columns with `DBTable`; explicit information about datetime columns.
+- Example data for `DBTableTimed` behaviour.
