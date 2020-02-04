@@ -46,8 +46,17 @@ class DBTable:
         """
         Prepares the values to fit the SQL query
         """
-        values = [str(i) for i in set(values) if str(i) != ''] #XXX the if is a precaution against NULL values
-        return  "('" + "'), ('".join(values) + "')"
+        return self._format_for_query_multiple(values)
+
+    def _format_for_query_multiple(self, values):
+        """
+        Formats the values to the multiple references required.
+        """
+        if isinstance(values, pd.core.frame.DataFrame):
+            return ', '.join([ "('" + "', '".join([str(i) if not isinstance(i, pd.Series.dt) else i.strftime("'%Y-%m-%d'") for i in els ]) + "')" for els in zip(*[values[r] for r in self.reference])])
+        elif isinstance(values, pd.core.series.Series):
+            values = [str(i) for i in set(values) if str(i) != ''] #XXX the if is a precaution against NULL values
+            return  "('" + "'), ('".join(values) + "')"
 
     def _obtain_pre_checks(self, mapping):
         """
@@ -74,7 +83,7 @@ class DBTable:
         """
         Main iteraction loop, format the query and collects the data
         """
-        self._query_sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping))
+        self._query_sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping), referencevars=', '.join(self.reference))
         return pd.read_sql_query(self._query_sql, con=self.engine)
     
     def obtain_data(self, mapping):
@@ -164,22 +173,11 @@ class DBTableTimed(DBTable):
         else:
             raise ObtainDataError('Mode invalid for "{}". Expected "{}"'.format(self.__class__.__name__, '", "'.join([str(i) for i in self._VALID_MODES[self.mode]])))
 
-
-    def _format_for_query_multiple(self, values):
-        """
-        Formats the values to the multiple references required.
-        """
-        if isinstance(values, pd.core.frame.DataFrame):
-            return ', '.join([ "('" + "', '".join([str(i) if not isinstance(i, pd.Series.dt) else i.strftime("'%Y-%m-%d'") for i in els ]) + "')" for els in zip(*[values[r] for r in self.reference])])
-        elif isinstance(values, pd.core.series.Series):
-            values = [str(i) for i in set(values) if str(i) != ''] # copy-pasta of super class behaviour
-            return  "('" + "'), ('".join(values) + "')"
-
     def _obtain_data(self, mapping):
         """
         When obtaining data using time reference we need to correct some terms in the query.
         """
-        references = self._format_for_query_multiple(mapping)
+        references = self._format_for_query(mapping)
         referencevars = ','.join(self.inputvars)
         ## the rules
         if self.mode is None:
@@ -199,7 +197,7 @@ class DBTableTimed(DBTable):
             AS_TERM += ', filtering_part.{GIVEN_NAME} AS {DATASET_NAME}'.format(GIVEN_NAME=in_dataset, DATASET_NAME=we_have)
             GROUPBY_TERM += ', filtering_part.{GIVEN_NAME}'.format(GIVEN_NAME=in_dataset)
         self._query_sql = self.query.replace('{AS_TERM}', AS_TERM).replace('{GROUPBY_TERM}', GROUPBY_TERM).replace('{OPERATION}', op).format(references=references, referencevars=referencevars, WHERE=WHERE_CLAUSE.replace('{DELAY}', self.delay if self.delay else '0').replace('{DATEVARIABLE}', self.table_date_variable), DATEVARIABLE=self.table_date_variable)
-        return pd.read_sql_query(self._query_sql, con=self.engine, parse_dates=self.reference[1:])
+        return pd.read_sql_query(self._query_sql, con=self.engine, parse_dates=self.reference[1:]) # XXX: the dates would be better in a specific column (avoiding the conversion of wrong columns)
 
 
 class DBCategory:
