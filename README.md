@@ -32,6 +32,7 @@ Multiple variables that map an area code to key statistics were downloaded.
 - Crimes: https://data.police.uk
 - Income: https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/earningsandworkinghours/datasets/smallareaincomeestimatesformiddlelayersuperoutputareasenglandandwales
 - Postcode lookup: http://geoportal.statistics.gov.uk/items/postcode-to-output-area-hierarchy-with-classifications-august-2018-lookup-in-the-uk
+- Index of Multiple Deprivation: https://www.gov.uk/government/statistics/english-indices-of-deprivation-2015
 
 Most of official data are under Open Government License 3.0 (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
 
