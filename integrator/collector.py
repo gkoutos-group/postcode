@@ -287,7 +287,10 @@ class DataCollector:
                 try:
                     chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False, validate='many_to_one') #merge the data using the reference variables
                 except pd.errors.MergeError as e:
-                    raise ObtainDataError("Data extractor '{}' failed. There are duplicate elements. Please disable it. Duplicated elements are '{}'.".format(d, "', '".join([str(i) for i in ndf[d.reference][ndf[d.reference].duplicated(keep=False)].unique()]))) from pd.errors.MergeError() # TODO: this will fail if we have multiple columns
+                    if isinstance(ndf[d.reference], pd.Series):
+                        raise ObtainDataError("Data extractor '{}' failed. There are duplicate elements. Please disable it. Duplicated elements are '{}'.".format(d, "', '".join([str(i) for i in ndf[d.reference][ndf[d.reference].duplicated(keep=False)].drop_duplicates(keep='first')]))) from pd.errors.MergeError()
+                    else: # isinstance(ndf[d.reference], pd.DataFrame)
+                        raise ObtainDataError("Data extractor '{}' failed. There are duplicate elements. Please disable it. Duplicated elements are '{}'.".format(d, "', '".join(['<' + ', '.join([str(j) for j in i[1]]) + '>' for i in ndf[d.reference][ndf[d.reference].duplicated(keep=False)].drop_duplicates(keep='first').iterrows()]))) from pd.errors.MergeError()
                 if self.verbose:
                     print("|- Source '{}' took {:.2f}s (internal processing {:.2f}s)".format(d, time.time() - start_time, time.time() - internal_time))
             if self.verbose:
