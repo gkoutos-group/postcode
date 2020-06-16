@@ -211,6 +211,8 @@ class DataCollector:
         @param sep: separator for the output file
         @param return_dataset (default True): if the dataset is going to be returned after this function
         """
+        if not os.path.exists(os.path.dirname(os.path.abspath(output_file))):
+            raise ObtainDataError('Output file folder does not exists: "{}".'.format(os.path.dirname(os.path.abspath(output_file))))
         if os.path.isfile(output_file) and not ignore_file_exists:
             raise ObtainDataError('Output file already exists: "{}".'.format(output_file))
         start = time.time()
