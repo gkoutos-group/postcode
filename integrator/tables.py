@@ -6,6 +6,56 @@ Definition of main types of extractors
 
 import pandas as pd
 from integrator.util import ObtainDataError
+import os
+
+class DataSource:
+    """
+    This class provides the abstraction for data extraction connectors
+    """
+    def __init__(self, reference, name=None):
+        if name is None:
+            name = self.__class__.__name__
+        self.name = name
+        self.reference = reference
+
+    def obtain_data(self, mapping):
+        pass
+
+
+class CSVTable(DataSource):
+    def __init__(self, reference, target_file, target_columns=None, delimiter=',', name=None):
+        super().__init__(reference=reference, name=name)
+
+        self.delimiter = delimiter
+        self.target_file = target_file
+        if isinstance(target_columns, str):
+            target_columns = [target_columns]
+        self.target_columns = target_columns
+
+        if not os.path.exists(target_file):
+            raise ObtainDataError('File "{}" does not exists.'.format(target_file))
+
+        _testdf = pd.read_csv(target_file, delimiter=delimiter, nrows=1)
+
+        if reference not in _testdf.columns.values:
+            raise ObtainDataError('Reference column "{}" not found.'.format(reference))
+
+        _invalid_columns = list()
+        for i in self.target_columns:
+            if i not in _testdf.columns.values:
+                _invalid_columns.append(i)
+        if len(_invalid_columns) > 0:
+            raise ObtainDataError('Not possible to find columns "{}".'.format('", "'.join(_invalid_columns)))
+
+        if self.target_columns is None:
+            self.target_columns = _testdf.columns.values
+        print('Loading file "{}". If it takes a long time disable "{}"'.format(self.target_file, self.name))
+        self._df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=[self.reference] + self.target_columns)
+
+
+    def obtain_data(self, mapping):
+        print("TODO: this call does not perform any check") #TODO information here
+        return self._df.loc[self._df[self.reference].isin(mapping)]
 
 
 class DBTable:
