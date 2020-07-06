@@ -12,14 +12,32 @@ class DataSource:
     """
     This class provides the abstraction for data extraction connectors
     """
-    def __init__(self, reference, name=None):
+    def __init__(self, reference, name=None, rename=True):
         if name is None:
-            name = self.__class__.__name__
+            name = self.__class__.__name__ #if there is no name use the default one
         self.name = name
         self.reference = reference
+        self.rename = rename
+
+    def __str__(self):
+        """
+        Format the str call to "{given name}: {references}"
+        """
+        return '{}: {}'.format(self.name, self.reference)
+
+    def __repr__(self):
+        """
+        The implicit name of the object changed to "<str() @ addr>"
+        """
+        return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
 
     def obtain_data(self, mapping):
         pass
+
+    def _post_op(self, df):
+        if self.rename:
+            df.rename(columns=lambda x: self.name + '.' + x if (not isinstance(self.reference, list) and x != self.reference) or (isinstance(self.reference, list) and x not in self.reference) else x, inplace=True)
+        return df
 
 
 class CSVTable(DataSource):
@@ -52,13 +70,15 @@ class CSVTable(DataSource):
         print('Loading file "{}". If it takes a long time disable "{}"'.format(self.target_file, self.name))
         self._df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=[self.reference] + self.target_columns)
 
+    def _post_op(self, df):
+        return super()._post_op(df)
 
     def obtain_data(self, mapping):
         print("TODO: this call does not perform any check") #TODO information here
-        return self._df.loc[self._df[self.reference].isin(mapping)]
+        return self._post_op(self._df.loc[self._df[self.reference].isin(mapping)])
 
 
-class DBTable:
+class DBTable(DataSource):
     """
     This is a generic extractor for a table. This needs to be derived to create an extractor for another table.
 
@@ -69,29 +89,14 @@ class DBTable:
     @param name: name to show on the returned data
     """
     def __init__(self, reference, query, engine=None, rename=True, name=None):
-        self.reference = reference
+        super().__init__(reference=reference, name=name, rename=rename)
         self.engine = engine
         self.query = query
         self._number_cols = 0
         self._columns = []
-        self.rename = rename
-        if name is None: #if there is no name we aare going to use the default behaviour
-            name = self.__class__.__name__
-        self.name = name
         self._query_sql = None
 
-    def __str__(self):
-        """
-        Format the str call to "{given name}: {references}"
-        """
-        return '{}: {}'.format(self.name, self.reference)
-
-    def __repr__(self):
-        """
-        The implicit name of the object changed to "<str() @ addr>"
-        """
-        return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
-        
+       
     def _format_for_query(self, values):
         """
         Prepares the values to fit the SQL query
