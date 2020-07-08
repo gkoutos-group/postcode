@@ -39,8 +39,31 @@ class DataSource:
             df.rename(columns=lambda x: self.name + '.' + x if (not isinstance(self.reference, list) and x != self.reference) or (isinstance(self.reference, list) and x not in self.reference) else x, inplace=True)
         return df
 
-
+    
 class CSVTable(DataSource):
+    loaded_files = dict() # file -> [([fields], pd)]
+    
+    @classmethod
+    def get_file(cls, target_file, delimiter, columns):
+        if target_file in cls.loaded_files:
+            for fields, df in cls.loaded_files[target_file]:
+                if len(set(columns).intersection(set(fields))) == len(columns):
+                    return df
+        else:
+            cls.loaded_files[target_file] = list()
+        print('Loading file "{}" with columns "{}", this might take some time.'.format(target_file, '", "'.join(columns)))
+        _df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=columns)
+        cls.loaded_files[target_file].append((columns, _df))
+        return _df
+    
+    @classmethod
+    def is_loaded(cls, target_file, delimiter, columns):
+        if target_file in cls.loaded_files:
+            for fields, df in cls.loaded_files:
+                if len(set(columns).intersection(set(fields))) == len(columns):
+                    return True
+        return False
+    
     def __init__(self, reference, target_file, target_columns=None, delimiter=',', name=None):
         super().__init__(reference=reference, name=name)
 
@@ -67,8 +90,7 @@ class CSVTable(DataSource):
 
         if self.target_columns is None:
             self.target_columns = _testdf.columns.values
-        print('Loading file "{}". If it takes a long time disable "{}"'.format(self.target_file, self.name))
-        self._df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=[self.reference] + self.target_columns)
+        self._df = CSVTable.get_file(target_file, delimiter=delimiter, columns=[self.reference] + self.target_columns)
 
     def _post_op(self, df):
         return super()._post_op(df)
