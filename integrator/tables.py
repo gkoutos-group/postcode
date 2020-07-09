@@ -45,6 +45,8 @@ class CSVTable(DataSource):
     
     @classmethod
     def get_file(cls, target_file, delimiter, columns):
+        if isinstance(columns, str):
+            columns = [columns]
         if target_file in cls.loaded_files:
             for fields, df in cls.loaded_files[target_file]:
                 if len(set(columns).intersection(set(fields))) == len(columns):
@@ -58,6 +60,8 @@ class CSVTable(DataSource):
     
     @classmethod
     def is_loaded(cls, target_file, delimiter, columns):
+        if isinstance(columns, str):
+            columns = [columns]
         if target_file in cls.loaded_files:
             for fields, df in cls.loaded_files:
                 if len(set(columns).intersection(set(fields))) == len(columns):
@@ -95,8 +99,9 @@ class CSVTable(DataSource):
     def _post_op(self, df):
         return super()._post_op(df)
 
-    def obtain_data(self, mapping):
-        print("TODO: this call does not perform any check") #TODO information here
+    def obtain_data(self, mapping, warning=True):
+        if warning:
+            print("TODO: this call does not perform any check")
         return self._post_op(self._df.loc[self._df[self.reference].isin(mapping)])
 
 
