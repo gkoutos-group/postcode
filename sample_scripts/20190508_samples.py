@@ -1,5 +1,12 @@
 
-from extractor import *
+import pandas as pd
+import numpy as np
+from integrator.collector import DataCollector
+from integrator.sources import Income, Crime, Census11
+from integrator.postcode_mapping import PostcodeMapping
+
+from sqlalchemy import create_engine
+
 
 engine = create_engine('postgresql://postgres@localhost:5432/postcode')
 
