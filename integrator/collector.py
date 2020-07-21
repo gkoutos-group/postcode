@@ -4,6 +4,10 @@ Class definition for the handling of the main data collector
 """
 
 import time
+import pandas as pd
+import numpy as np
+import os.path
+import copy
 from integrator.util import ObtainDataError
 
 
@@ -11,17 +15,34 @@ class DataCollector:
     """
     Main class for data collection, this class will handle all the others.
 
-    @param database_file_handler: this is a function that yields data blocks
+    @param database_file_handler (function that yields data blocks; string with csv dataset location; or pandas dataframe): the source data
     @param sources: the difference data sources used
     @param reference_sources (list of DBMapping classes): these are the classes that map different reference variables
     @param reference_engines (list of sqlalchemy engines): the engines to be used by the respective list of reference sources
-    @param verbose: output some (minimal) verbose information
+    @param verbose: output some verbose information
+    @param chunksize (default 4*4096): the size of the chunk if the input database is a file or a dataframe
+    @param stop_after_chunk (default None): if it should stop collecting after a chunk
+    @param skip_missing: if the references are incomplete the row is going to be skipped: THIS MIGHT LEAD TO ADVERSE BEHAVIOURS: SUCH AS EMPTY QUERY/RETURN
     """
-    def __init__(self, database_file_handler, sources=None, reference_sources=None, reference_engines=None, verbose=False):
+    def __init__(self, database_handler, sources=None, reference_sources=None, reference_engines=None, verbose=True, chunksize=4*4096, stop_after_chunk=None, skip_missing=False):
+        if type(database_handler) is str: # str input 
+            if not os.path.isfile(database_handler):
+                raise ObtainDataError("Input file does not exist: '{}'! Or we don't have permission to read.".format(database_handler))
+            def _db_get():
+                for chunk in pd.read_csv(database_handler, chunksize=chunksize):
+                    yield chunk
+            database_file_handler = _db_get
+        elif isinstance(database_handler, pd.DataFrame): # pandas.DataFrame input
+            def _db_get():
+                for i, j in database_handler.groupby(np.arange(len(database_handler))//chunksize):
+                    yield j
+            database_file_handler = _db_get
+        else: # function that yields chunks
+            database_file_handler = database_handler
         self.database_file_handler = database_file_handler
         if type(sources) is not list: #we are avoiding issues here
             sources = [sources]
-        self.sources = sources
+        self.sources = copy.copy(sources)
         self.checked = False
         self.verbose = verbose
         if reference_sources and reference_engines: #if we possibly doing mapping we need the same number of reference mappers and engine to use with them
@@ -31,6 +52,8 @@ class DataCollector:
         else:
             self._reference_engines = None
         self._build_reference_graph(reference_sources)
+        self.stop_after_chunk = stop_after_chunk
+        self.skip_missing = skip_missing
 
     def _build_reference_graph(self, reference_sources):
         """
@@ -38,6 +61,7 @@ class DataCollector:
 
         @param reference_sources: the references used for dependency resolution
         """
+        # print('- Building reference graph.')
         graph = dict()
         if not reference_sources:
             self.reference_graph = None
@@ -47,11 +71,21 @@ class DataCollector:
                 if a not in graph:
                     graph[a] = {'neighbours': dict()}
                 for b in i.AVAILABLE:
+                    # if it is the same variable skip
                     if a == b:
                         continue
+                    # check if the variable is valid
+                    try:
+                        # print('|- {} -> {}'.format(a,b), end=' ')
+                        i.check_variables_interaction(from_variable=a, to_variables=b)
+                    except Exception as e:
+                        # print('fail - ', e)
+                        continue
+                    # print('ok')
+                    # add to the neighbours
                     if b not in graph[a]['neighbours']:
                         graph[a]['neighbours'][b] = list()
-                    graph[a]['neighbours'][b].append(i)
+                    graph[a]['neighbours'][b].append(i) #format: graph [source] "neighbours" [target] = [methods]
         self.reference_graph = graph
 
     def _minimum_mapping(self, from_variables, to_variables):
@@ -145,6 +179,68 @@ class DataCollector:
         1. add new columns from the dependency checks
         2. add new columns requested
         """
+        start = time.time()
+        chunk_id = 0
+        for i in self._collect():
+            yield i
+            chunk_id += 1
+            if self.stop_after_chunk is not None and chunk_id >= self.stop_after_chunk:
+                return
+        if self.verbose:
+            print('- Extraction took {:.2f}s'.format(time.time() - start))
+
+    def collect_all(self, filtering_function=None):
+        """
+        Collect all the data, does the filtering function and returns the complete data frame.
+
+        @param filtering_function (default None): function that will be called with the dataframe (it must return the dataframe)
+        """
+        all_df = list()
+        for i in self.collect():
+            if filtering_function:
+                i = filtering_function(i)
+            all_df.append(i)
+        return pd.concat(all_df, sort=False)
+
+    def collect_to_file(self, output_file, filtering_function=None, ignore_file_exists=False, sep=',', index=False, return_dataset=True):
+        """
+        Collects all the data, does the filtering function on the data and saves it to file. After saving the dataframe may be returned with parameter 'return_dataset'.
+
+        @param output_file: output file
+        @param filtering_function (default None): function that will be called with the dataframe (it must return the dataframe)
+        @param sep: separator for the output file
+        @param return_dataset (default True): if the dataset is going to be returned after this function
+        """
+        if not os.path.exists(os.path.dirname(os.path.abspath(output_file))):
+            raise ObtainDataError('Output file folder does not exists: "{}".'.format(os.path.dirname(os.path.abspath(output_file))))
+        if os.path.isfile(output_file) and not ignore_file_exists:
+            raise ObtainDataError('Output file already exists: "{}".'.format(output_file))
+        start = time.time()
+        if return_dataset:
+            all_df = self.collect_all(filtering_function)
+            if self.verbose:
+                print('|- Saving file...', end='')
+            all_df.to_csv(output_file, sep=sep, index=index)
+        else:
+            first_save = True
+            for i in self.collect():
+                if filtering_function:
+                    i = filtering_function(i)
+                if first_save:
+                    i.to_csv(output_file, sep=sep, index=index)
+                    first_save = False
+                else:
+                    i.to_csv(output_file, sep=sep, index=index, mode='a', header=False)
+            print('Dataset', end='')
+        if self.verbose:
+            print(' saved! Dataframe processing took {:.2f}s'.format(time.time() - start))
+        if return_dataset:
+            return all_df
+
+    def _collect(self):
+        """
+        Internal handling of the chunk collection.
+        """
         for chunk in self.database_file_handler():
             start_chunk = time.time()
             # if it is a first run we need a column dependency check
@@ -159,13 +255,44 @@ class DataCollector:
                 start_time = time.time()
                 if self.verbose:
                     print("|- Collecting '{}'".format(d), end='\r')
-                ndf = d.obtain_data(chunk[d.reference]) #obtain the data
+                # check for missing reference values
+                # # reference list
+                refs = d.reference
+                if type(refs) is not list:
+                    refs = [refs]
+                reference_missing = {}
+                for rc in refs:
+                    _n = np.sum(chunk[rc].isna().values)
+                    if _n > 0:
+                        reference_missing[rc] = _n
+                if len(reference_missing) > 0:
+                    err = 'Missing reference values for: {}'.format(';'.join(['"{}" ({})'.format(i,j) for i, j in reference_missing.items()])) + '.'
+                    if self.skip_missing and self.verbose:
+                        print('|* ' + err, end='\n\n')
+                    elif self.skip_missing is False:
+                        raise ObtainDataError(err + ' Please remove missing values.')
+                # if we should skip the missing:
+                chunk_search_data = chunk[d.reference]
+                if self.skip_missing:
+                    chunk_search_data = chunk_search_data.dropna()
+                # obtain the data
+                if len(chunk_search_data) == 0:
+                    print('|- Chunk with no data! Skipping!')
+                    ndf = pd.DataFrame(columns=d.reference)
+                else:
+                    ndf = d.obtain_data(chunk_search_data)
                 internal_time = time.time()
                 # print(chunk.columns.values)
                 # print(chunk.head())
                 # print(ndf.columns.values)
                 # print(ndf.head())
-                chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False) #merge the data using the reference variables
+                try:
+                    chunk = chunk.merge(ndf, on=d.reference, how='left', copy=False, validate='many_to_one') #merge the data using the reference variables
+                except pd.errors.MergeError as e:
+                    if isinstance(ndf[d.reference], pd.Series):
+                        raise ObtainDataError("Data extractor '{}' failed. There are duplicate elements. Please disable it. Duplicated elements are '{}'.".format(d, "', '".join([str(i) for i in ndf[d.reference][ndf[d.reference].duplicated(keep=False)].drop_duplicates(keep='first')]))) from pd.errors.MergeError()
+                    else: # isinstance(ndf[d.reference], pd.DataFrame)
+                        raise ObtainDataError("Data extractor '{}' failed. There are duplicate elements. Please disable it. Duplicated elements are '{}'.".format(d, "', '".join(['<' + ', '.join([str(j) for j in i[1]]) + '>' for i in ndf[d.reference][ndf[d.reference].duplicated(keep=False)].drop_duplicates(keep='first').iterrows()]))) from pd.errors.MergeError()
                 if self.verbose:
                     print("|- Source '{}' took {:.2f}s (internal processing {:.2f}s)".format(d, time.time() - start_time, time.time() - internal_time))
             if self.verbose:

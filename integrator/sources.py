@@ -22,7 +22,10 @@ class Income(DBTable):
                             select *
                             from compiled.income
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.msoa = condition.msoa
+                         select condition.* 
+                         from filtering_part
+                         left join condition on filtering_part.msoa = condition.msoa
+                         where condition.msoa is not null
                          """, engine=engine)
 
 
@@ -44,7 +47,11 @@ class IndexMultipleDeprivation(DBTable):
                             select *
                             from public.indexmultipledeprivation
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa"""
+                         select condition.*
+                         from filtering_part
+                         left join condition on filtering_part.lsoa = condition.lsoa
+                         where condition.lsoa is not null
+                         """
         elif mode == 'only_scores':
             query = """
                          with filtering_part as (
@@ -54,7 +61,11 @@ class IndexMultipleDeprivation(DBTable):
                             select lsoa, "IOMDIS" as IMD
                             from public.indexmultipledeprivation
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.mapping = condition.lsoa"""
+                         select condition.* 
+                         from filtering_part
+                         left join condition on filtering_part.lsoa = condition.lsoa
+                         where condition.lsoa is not null
+                         """
         else:
             raise ObtainDataError('Invalid mode for "{}", please select one of: "{}"'.format(self.__class__.__name__, '", "'.join(modes)))
         super().__init__('lsoa', query=query, engine=engine)
@@ -75,7 +86,10 @@ class CrimesOutcome(DBTable):
                             select *
                             from compiled.crimes_outcomes_yearly
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa
+                         select condition.* 
+                         from filtering_part
+                         left join condition on filtering_part.lsoa = condition.lsoa
+                         where condition.lsoa is not null
                          """, engine=engine)
 
 
@@ -94,7 +108,10 @@ class CrimesStreet(DBTable):
                             select *
                             from compiled.crimes_street_type_yearly
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.lsoa = condition.lsoa
+                         select condition.*
+                         from filtering_part
+                         left join condition on filtering_part.lsoa = condition.lsoa
+                         where condition.lsoa is not null
                          """, engine=engine)
 
 
@@ -123,7 +140,10 @@ class Census11(DBCategory):
                             select *
                             from census2011.{table}
                          )
-                         select condition.* from filtering_part left join condition on filtering_part.oa = condition.oa"""
+                         select condition.* 
+                         from filtering_part 
+                         left join condition on filtering_part.oa = condition.oa
+                         where condition.oa is not null"""
     options = ['adults_not_employment_etc', 'age_structure', 'car_etc', 'census_industry', 'communal_etc', 'country_birth', 'dwellings_etc', 'economic_etc', 'ethnic_group', 'health_unpaid_care', 'hours_worked', 'household_composition', 'household_language', 'living_arrangements', 'lone_parents_household_etc', 'marital_and_civil_partnership_status', 'national_identity', 'nssec_etc', 'occupation_sex', 'passports_held', 'qualifications_students', 'religion', 'rooms_etc', 'tenure', 'usual_resident_population']
     def get_tables(engine):
         """

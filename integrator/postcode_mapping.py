@@ -16,6 +16,5 @@ class PostcodeMapping(DBMapping): #XXX if mapping one bigger to smaller there mi
     """
     AVAILABLE = ['pc', 'oa', 'lsoa', 'msoa', 'lad']
     def __init__(self, from_variable, to_variables, engine):
-        table = 'public.postcode_lookup11'
-        super().__init__(from_variable, to_variables, engine, table)
+        super().__init__(from_variable, to_variables, engine, table='public.postcode_lookup11')
 

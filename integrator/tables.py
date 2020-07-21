@@ -6,28 +6,18 @@ Definition of main types of extractors
 
 import pandas as pd
 from integrator.util import ObtainDataError
+import os
 
-
-class DBTable:
+class DataSource:
     """
-    This is a generic extractor for a table. This needs to be derived to create an extractor for another table.
-
-    @param reference: reference variable (to be used from a reference pandas data frame)
-    @param query: query to be run against the engine
-    @param engine: an sqlalchemy engine
-    @param rename: if we should rename the returned table (instead of the class name) to name
-    @param name: name to show on the returned data
+    This class provides the abstraction for data extraction connectors
     """
-    def __init__(self, reference, query, engine=None, rename=True, name=None):
-        self.reference = reference
-        self.engine = engine
-        self.query = query
-        self._number_cols = 0
-        self._columns = []
-        self.rename = rename
-        if name is None: #if there is no name we aare going to use the default behaviour
-            name = self.__class__.__name__
+    def __init__(self, reference, name=None, rename=True):
+        if name is None:
+            name = self.__class__.__name__ #if there is no name use the default one
         self.name = name
+        self.reference = reference
+        self.rename = rename
 
     def __str__(self):
         """
@@ -40,13 +30,115 @@ class DBTable:
         The implicit name of the object changed to "<str() @ addr>"
         """
         return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
-        
+
+    def obtain_data(self, mapping):
+        pass
+
+    def _post_op(self, df):
+        if self.rename:
+            df.rename(columns=lambda x: self.name + '.' + x if (not isinstance(self.reference, list) and x != self.reference) or (isinstance(self.reference, list) and x not in self.reference) else x, inplace=True)
+        return df
+
+    
+class CSVTable(DataSource):
+    loaded_files = dict() # file -> [([fields], pd)]
+    
+    @classmethod
+    def get_file(cls, target_file, delimiter, columns):
+        if isinstance(columns, str):
+            columns = [columns]
+        if target_file in cls.loaded_files:
+            for fields, df in cls.loaded_files[target_file]:
+                if len(set(columns).intersection(set(fields))) == len(columns):
+                    return df
+        else:
+            cls.loaded_files[target_file] = list()
+        print('Loading file "{}" with columns "{}", this might take some time.'.format(target_file, '", "'.join(columns)))
+        _df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=columns)
+        cls.loaded_files[target_file].append((columns, _df))
+        return _df
+    
+    @classmethod
+    def is_loaded(cls, target_file, delimiter, columns):
+        if isinstance(columns, str):
+            columns = [columns]
+        if target_file in cls.loaded_files:
+            for fields, df in cls.loaded_files:
+                if len(set(columns).intersection(set(fields))) == len(columns):
+                    return True
+        return False
+    
+    def __init__(self, reference, target_file, target_columns=None, delimiter=',', name=None):
+        super().__init__(reference=reference, name=name)
+
+        self.delimiter = delimiter
+        self.target_file = target_file
+        if isinstance(target_columns, str):
+            target_columns = [target_columns]
+        self.target_columns = target_columns
+
+        if not os.path.exists(target_file):
+            raise ObtainDataError('File "{}" does not exists.'.format(target_file))
+
+        _testdf = pd.read_csv(target_file, delimiter=delimiter, nrows=1)
+
+        if reference not in _testdf.columns.values:
+            raise ObtainDataError('Reference column "{}" not found.'.format(reference))
+
+        _invalid_columns = list()
+        for i in self.target_columns:
+            if i not in _testdf.columns.values:
+                _invalid_columns.append(i)
+        if len(_invalid_columns) > 0:
+            raise ObtainDataError('Not possible to find columns "{}".'.format('", "'.join(_invalid_columns)))
+
+        if self.target_columns is None:
+            self.target_columns = _testdf.columns.values
+        self._df = CSVTable.get_file(target_file, delimiter=delimiter, columns=[self.reference] + self.target_columns)
+
+    def _post_op(self, df):
+        return super()._post_op(df)
+
+    def obtain_data(self, mapping, warning=True):
+        if warning:
+            print("TODO: this call does not perform any check")
+        return self._post_op(self._df.loc[self._df[self.reference].isin(mapping)])
+
+
+class DBTable(DataSource):
+    """
+    This is a generic extractor for a table. This needs to be derived to create an extractor for another table.
+
+    @param reference: reference variable (to be used from a reference pandas data frame)
+    @param query: query to be run against the engine
+    @param engine: an sqlalchemy engine
+    @param rename: if we should rename the returned table (instead of the class name) to name
+    @param name: name to show on the returned data
+    """
+    def __init__(self, reference, query, engine=None, rename=True, name=None):
+        super().__init__(reference=reference, name=name, rename=rename)
+        self.engine = engine
+        self.query = query
+        self._number_cols = 0
+        self._columns = []
+        self._query_sql = None
+
+       
     def _format_for_query(self, values):
         """
         Prepares the values to fit the SQL query
         """
-        values = [str(i) for i in set(values) if str(i) != ''] #XXX the if is a precaution against NULL values
-        return  "('" + "'), ('".join(values) + "')"
+        return self._format_for_query_multiple(values)
+
+    def _format_for_query_multiple(self, values):
+        """
+        Formats the values to the multiple references required.
+        """
+        if isinstance(values, pd.core.frame.DataFrame):
+            return ', '.join([ "('" + "', '".join([str(i) if not isinstance(i, pd.Series.dt) else i.strftime("'%Y-%m-%d'") for i in els ]) + "')" for els in zip(*[values[r] for r in self.reference])])
+        elif isinstance(values, pd.core.series.Series):
+            values = [str(i) for i in set(values) if str(i) != ''] #XXX the if is a precaution against NULL values
+            return  "('" + "'), ('".join(values) + "')"
 
     def _obtain_pre_checks(self, mapping):
         """
@@ -73,8 +165,8 @@ class DBTable:
         """
         Main iteraction loop, format the query and collects the data
         """
-        sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping))
-        return pd.read_sql_query(sql, con=self.engine)
+        self._query_sql = self.query.format(references=self._format_for_query(mapping), references_l=self._format_for_query(mapping), referencevars=', '.join(self.reference))
+        return pd.read_sql_query(self._query_sql, con=self.engine)
     
     def obtain_data(self, mapping):
         """
@@ -122,8 +214,8 @@ class DBTableTimed(DBTable):
         self.end_date = end_date
         self.ref_date = ref_date
         self.delay = str(int(delay)) if delay else '0'
-        self.reference = [reference]
-        self.inputvars = [reference]
+        self.reference = reference if type(reference) is list else [reference]
+        self.inputvars = reference if type(reference) is list else [reference]
         self.first_presence = first_presence
         self.table_date_variable = table_date_variable
         self._check_settings()
@@ -163,22 +255,11 @@ class DBTableTimed(DBTable):
         else:
             raise ObtainDataError('Mode invalid for "{}". Expected "{}"'.format(self.__class__.__name__, '", "'.join([str(i) for i in self._VALID_MODES[self.mode]])))
 
-
-    def _format_for_query_multiple(self, values):
-        """
-        Formats the values to the multiple references required.
-        """
-        if isinstance(values, pd.core.frame.DataFrame):
-            return ', '.join([ "('" + "', '".join([str(i) if not isinstance(i, pd.Series.dt) else i.strftime("'%Y-%m-%d'") for i in els ]) + "')" for els in zip(*[values[r] for r in self.reference])])
-        elif isinstance(values, pd.core.series.Series):
-            values = [str(i) for i in set(values) if str(i) != ''] # copy-pasta of super class behaviour
-            return  "('" + "'), ('".join(values) + "')"
-
     def _obtain_data(self, mapping):
         """
         When obtaining data using time reference we need to correct some terms in the query.
         """
-        references = self._format_for_query_multiple(mapping)
+        references = self._format_for_query(mapping)
         referencevars = ','.join(self.inputvars)
         ## the rules
         if self.mode is None:
@@ -197,8 +278,8 @@ class DBTableTimed(DBTable):
         for we_have, in_dataset in zip(self.reference[1:], self.inputvars[1:]): #this is going to be added for the passage back
             AS_TERM += ', filtering_part.{GIVEN_NAME} AS {DATASET_NAME}'.format(GIVEN_NAME=in_dataset, DATASET_NAME=we_have)
             GROUPBY_TERM += ', filtering_part.{GIVEN_NAME}'.format(GIVEN_NAME=in_dataset)
-        sql = self.query.replace('{AS_TERM}', AS_TERM).replace('{GROUPBY_TERM}', GROUPBY_TERM).replace('{OPERATION}', op).format(references=references, referencevars=referencevars, WHERE=WHERE_CLAUSE.replace('{DELAY}', self.delay if self.delay else '0').replace('{DATEVARIABLE}', self.table_date_variable), DATEVARIABLE=self.table_date_variable)
-        return pd.read_sql_query(sql, con=self.engine, parse_dates=self.reference[1:])
+        self._query_sql = self.query.replace('{AS_TERM}', AS_TERM).replace('{GROUPBY_TERM}', GROUPBY_TERM).replace('{OPERATION}', op).format(references=references, referencevars=referencevars, WHERE=WHERE_CLAUSE.replace('{DELAY}', self.delay if self.delay else '0').replace('{DATEVARIABLE}', self.table_date_variable), DATEVARIABLE=self.table_date_variable)
+        return pd.read_sql_query(self._query_sql, con=self.engine, parse_dates=self.reference[1:]) # XXX: the dates would be better in a specific column (avoiding the conversion of wrong columns)
 
 
 class DBCategory:
