@@ -1,4 +1,10 @@
-# postcode
+# postcode tools & Integrator
+
+[![DOI](https://zenodo.org/badge/185373533.svg)](https://zenodo.org/badge/latestdoi/185373533)
+
+Author: Victor Roth Cardoso - V.RothCardoso@bham.ac.uk
+
+E-mail me suggestions, comments and issues.
 
 This is a compilation of the scripts for processing and inclusion of variables associated with areas into a dataset.
 
