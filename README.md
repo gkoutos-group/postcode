@@ -132,8 +132,8 @@ class DBTableVariable(DBTableTimed):
 
 ## Improving it
 
-There are some things missing in this implementation:
+Some improvements we still require:
 
-- Tests: both for function and returned data.
-- `DBTableTimed`: simplify/merge the behaviour for multiple columns with `DBTable`; explicit information about datetime columns.
+- Public tests, for both functions and returned data.
 - Example data for `DBTableTimed` behaviour.
+- `DBTableTimed`: simplify/merge the behaviour for multiple columns with `DBTable`; explicit information about datetime columns.
