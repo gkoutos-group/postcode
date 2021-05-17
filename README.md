@@ -1,6 +1,16 @@
-# postcode
+# postcode tools & Integrator
+
+[![DOI](https://zenodo.org/badge/185373533.svg)](https://zenodo.org/badge/latestdoi/185373533)
+
+Author: Victor Roth Cardoso - V.RothCardoso@bham.ac.uk
+
+E-mail me suggestions, comments and issues.
 
 This is a compilation of the scripts for processing and inclusion of variables associated with areas into a dataset.
+
+## Documentation
+
+Documentation can be accessed using pydoc: `python3 -m pydoc`
 
 ## How it works
 
@@ -42,15 +52,15 @@ A copy of the data utilised is available in the _data/_ folder (please note that
 
 ### Docker image:
 
-docker run --name postcode_mapper_postgresdb --restart unless-stopped -p 5432:5432 postgres:11.2 -d postgres
+`docker run --name postcode_mapper_postgresdb --restart unless-stopped -p 5432:5432 postgres:11.2 -d postgres`
 
 This will create a container with name postcode_mapper_postgresdb, which will restart automatically and map the port 5432 to the host.
 
 ### Create database and schemas:
 
-docker exec -it postcode_mapper_postgresdb
+`docker exec -it postcode_mapper_postgresdb`
 
-psql
+`psql`
 
 ```sql
 CREATE DATABASE postcode;
@@ -62,9 +72,9 @@ CREATE SCHEMA census2011;
 
 ### Python scripts
 
-source venv/bin/activate
+`source venv/bin/activate`
 
-pip install psycopg2 pandas numpy sqlalchemy
+`pip install psycopg2 pandas numpy sqlalchemy`
 
 ### Getting it ready
 
@@ -72,14 +82,58 @@ Extract the _data/_ files and move them to the main folder.
 
 Execute the _20190502_postcode_sql.py_ script.
 
-## Other
+## Creating more extractors
 
-Some Postgresql operations were done using DBeaver.
+This will look a bit daunting at first, but for any table with format <identifier, variables, date, value>, a generic constructor for time-releated events can be created:
+
+```python
+class DBTableVariable(DBTableTimed):
+    def __init__(self, table, table_date_variable, variables, engine, rename=True, name=None, mode=None, begin_date=None, end_date=None, ref_date=None, shift=None, first_presence=None):
+        query = """
+            WITH filtering_part AS (
+                SELECT *
+                FROM (values {references}) tempT({referencevars})
+            ), preselect AS (
+                SELECT presence.identifier, {OPERATION}(presence.{DATEVARIABLE}) AS CONDITION_DATE {AS_TERM}
+                FROM filtering_part
+                LEFT JOIN (
+                    SELECT identifier, {DATEVARIABLE}
+                    FROM {TABLE}
+                ) AS presence ON filtering_part.identifier = presence.identifier
+                {WHERE}
+                GROUP BY presence.identifier {GROUPBY_TERM}
+            ), condition as (
+                SELECT DISTINCT preselect.identifier, {OPERATION}(preselect.CONDITION_DATE) AS CONDITION_DATE, count(*) as AMT_MEASURES, {VARIABLELISTAS} {INTERNAL_AS_TERM}
+                FROM preselect
+                INNER JOIN {TABLE} AS ot ON preselect.identifier = ot.identifier AND preselect.CONDITION_DATE = ot.{DATEVARIABLE}
+                GROUP BY preselect.identifier {INTERNAL_GROUPBY_TERM}
+            )
+            SELECT *
+            FROM condition
+            WHERE condition.identifier IS NOT NULL
+        """
+        query = query.replace('{TABLE}', table).replace('{VARIABLELISTAS}', ', '.join(['avg(convert(numeric, "' + i + '")) as "avg_' + i + '"' for i in variables]))
+        super().__init__('identifier', query, engine, rename, name, mode, begin_date, end_date, ref_date, shift, first_presence, table_date_variable)
+
+    def _obtain_data(self, mapping):
+        AS_TERM = ''
+        GROUPBY_TERM = ''
+        JOIN_PART = ''
+        for we_have, in_dataset in zip(self.reference[1:], self.inputvars[1:]): #this is going to be added in the internal bit
+            AS_TERM += ', CONVERT(DATE, {DATASET_NAME}) as {DATASET_NAME}'.format(GIVEN_NAME=in_dataset, DATASET_NAME=we_have)
+            GROUPBY_TERM += ', preselect.{DATASET_NAME}'.format(GIVEN_NAME=in_dataset, DATASET_NAME=we_have)
+            JOIN_PART += ' AND filtering_part.{GIVEN_NAME} = condition.{DATASET_NAME}'.format(GIVEN_NAME=in_dataset, DATASET_NAME=we_have)
+        original = self.query
+        self.query = self.query.replace('{INTERNAL_AS_TERM}', AS_TERM).replace('{INTERNAL_GROUPBY_TERM}', GROUPBY_TERM).replace('{JOIN_PART}', JOIN_PART)
+        sql_ret = super()._obtain_data(mapping)
+        self.query = original
+        return sql_ret
+```
 
 ## Improving it
 
-There are some things missing in this implementation:
+Some improvements we still require:
 
-- Tests: both for function and returned data.
-- `DBTableTimed`: simplify/merge the behaviour for multiple columns with `DBTable`; explicit information about datetime columns.
+- Public tests, for both functions and returned data.
 - Example data for `DBTableTimed` behaviour.
+- `DBTableTimed`: simplify/merge the behaviour for multiple columns with `DBTable`; explicit information about datetime columns.
