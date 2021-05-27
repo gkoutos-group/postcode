@@ -44,7 +44,7 @@ class CSVTable(DataSource):
     loaded_files = dict() # file -> [([fields], pd)]
     
     @classmethod
-    def get_file(cls, target_file, delimiter, columns):
+    def get_file(cls, target_file, delimiter, columns, encoding=None):
         if isinstance(columns, str):
             columns = [columns]
         if target_file in cls.loaded_files:
@@ -54,12 +54,12 @@ class CSVTable(DataSource):
         else:
             cls.loaded_files[target_file] = list()
         print('Loading file "{}" with columns "{}", this might take some time.'.format(target_file, '", "'.join(columns)))
-        _df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=columns)
+        _df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=columns, encoding=encoding)
         cls.loaded_files[target_file].append((columns, _df))
         return _df
     
     @classmethod
-    def is_loaded(cls, target_file, delimiter, columns):
+    def is_loaded(cls, target_file, delimiter, columns, encoding=None):
         if isinstance(columns, str):
             columns = [columns]
         if target_file in cls.loaded_files:
@@ -68,9 +68,10 @@ class CSVTable(DataSource):
                     return True
         return False
     
-    def __init__(self, reference, target_file, target_columns=None, delimiter=',', name=None):
+    def __init__(self, reference, target_file, target_columns=None, delimiter=',', encoding=None, name=None):
         super().__init__(reference=reference, name=name)
 
+        self.encoding = encoding
         self.delimiter = delimiter
         self.target_file = target_file
         if isinstance(target_columns, str):
@@ -80,7 +81,7 @@ class CSVTable(DataSource):
         if not os.path.exists(target_file):
             raise ObtainDataError('File "{}" does not exists.'.format(target_file))
 
-        _testdf = pd.read_csv(target_file, delimiter=delimiter, nrows=1)
+        _testdf = pd.read_csv(self.target_file, delimiter=self.delimiter, nrows=0, encoding=self.encoding)
 
         if reference not in _testdf.columns.values:
             raise ObtainDataError('Reference column "{}" not found.'.format(reference))
@@ -94,7 +95,7 @@ class CSVTable(DataSource):
 
         if self.target_columns is None:
             self.target_columns = _testdf.columns.values
-        self._df = CSVTable.get_file(target_file, delimiter=delimiter, columns=[self.reference] + self.target_columns)
+        self._df = CSVTable.get_file(target_file, delimiter=delimiter, columns=[self.reference] + self.target_columns, encoding=self.encoding)
 
     def _post_op(self, df):
         return super()._post_op(df)
