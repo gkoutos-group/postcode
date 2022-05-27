@@ -164,14 +164,14 @@ class DBTableTimed(DBTable):
             else:
                 EXTRA_COLUMNS = ''
             if len(missing_columns) > 0:
-                raise ObtainDataError('Missing values for "{}": "{}"{EXTRA_COLUMNS}'.replace('{EXTRA_COLUMNS}', EXTRA_COLUMNS).format(self.__class__.__name__, '", "'.join(missing_columns)))
+                raise ObtainDataError('Missing values for "{}": "{}"{EXTRA_COLUMNS}. Check the "mode" and other fields required.'.replace('{EXTRA_COLUMNS}', EXTRA_COLUMNS).format(self.__class__.__name__, '", "'.join(missing_columns)))
             elif len(extra_columns) > 0:
-                raise ObtainDataError('Extra columns for "{}". Extra columns {} were ignored.'.format(self.__class__.__name__, EXTRA_COLUMNS))
+                raise ObtainDataError('Extra columns for "{}". Extra columns {} were ignored. Check the "mode" and other fields required.'.format(self.__class__.__name__, EXTRA_COLUMNS))
 
         if self.mode in self._VALID_MODES:
             _check_columns(self.begin_date, self.end_date, self.ref_date, self.delay, self._VALID_MODES[self.mode])
         else:
-            raise ObtainDataError('Mode invalid for "{}". Expected "{}"'.format(self.__class__.__name__, '", "'.join([str(i) for i in self._VALID_MODES[self.mode]])))
+            raise ObtainDataError('"mode" option invalid for "{}". Expected "{}".'.format(self.__class__.__name__, '", "'.join([str(i) for i in self._VALID_MODES[self.mode]])))
 
     def _obtain_data(self, mapping):
         """
