@@ -6,29 +6,18 @@ Definition of main types of extractors
 
 import pandas as pd
 from integrator.util import ObtainDataError
+import os
 
-
-class DBTable:
+class DataSource:
     """
-    This is a generic extractor for a table. This needs to be derived to create an extractor for another table.
-
-    @param reference: reference variable (to be used from a reference pandas data frame)
-    @param query: query to be run against the engine
-    @param engine: an sqlalchemy engine
-    @param rename: if we should rename the returned table (instead of the class name) to name
-    @param name: name to show on the returned data
+    This class provides the abstraction for data extraction connectors
     """
-    def __init__(self, reference, query, engine=None, rename=True, name=None):
-        self.reference = reference
-        self.engine = engine
-        self.query = query
-        self._number_cols = 0
-        self._columns = []
-        self.rename = rename
-        if name is None: #if there is no name we aare going to use the default behaviour
-            name = self.__class__.__name__
+    def __init__(self, reference, name=None, rename=True):
+        if name is None:
+            name = self.__class__.__name__ #if there is no name use the default one
         self.name = name
-        self._query_sql = None
+        self.reference = reference
+        self.rename = rename
 
     def __str__(self):
         """
@@ -41,7 +30,102 @@ class DBTable:
         The implicit name of the object changed to "<str() @ addr>"
         """
         return '<' + self.__str__() + ' @ ' + str(hex(id(self))) + '>'
-        
+
+    def obtain_data(self, mapping):
+        pass
+
+    def _post_op(self, df):
+        if self.rename:
+            df.rename(columns=lambda x: self.name + '.' + x if (not isinstance(self.reference, list) and x != self.reference) or (isinstance(self.reference, list) and x not in self.reference) else x, inplace=True)
+        return df
+
+    
+class CSVTable(DataSource):
+    loaded_files = dict() # file -> [([fields], pd)]
+    
+    @classmethod
+    def get_file(cls, target_file, delimiter, columns, encoding=None, low_memory=True):
+        if isinstance(columns, str):
+            columns = [columns]
+        if target_file in cls.loaded_files:
+            for fields, df in cls.loaded_files[target_file]:
+                if len(set(columns).intersection(set(fields))) == len(columns):
+                    return df
+        else:
+            cls.loaded_files[target_file] = list()
+        print('Loading file "{}" with columns "{}", this might take some time.'.format(target_file, '", "'.join(columns)))
+        _df = pd.read_csv(target_file, delimiter=delimiter, index_col=False, usecols=columns, encoding=encoding, low_memory=low_memory)
+        cls.loaded_files[target_file].append((columns, _df))
+        return _df
+    
+    @classmethod
+    def is_loaded(cls, target_file, delimiter, columns, encoding=None):
+        if isinstance(columns, str):
+            columns = [columns]
+        if target_file in cls.loaded_files:
+            for fields, df in cls.loaded_files:
+                if len(set(columns).intersection(set(fields))) == len(columns):
+                    return True
+        return False
+    
+    def __init__(self, reference, target_file, target_columns=None, delimiter=',', encoding=None, name=None, low_memory=True):
+        super().__init__(reference=reference, name=name)
+
+        self.encoding = encoding
+        self.delimiter = delimiter
+        self.target_file = target_file
+        if isinstance(target_columns, str):
+            target_columns = [target_columns]
+        self.target_columns = target_columns
+        self.low_memory = low_memory
+
+        if not os.path.exists(target_file):
+            raise ObtainDataError('File "{}" does not exists.'.format(target_file))
+
+        _testdf = pd.read_csv(self.target_file, delimiter=self.delimiter, nrows=0, encoding=self.encoding, low_memory=low_memory)
+
+        if reference not in _testdf.columns.values:
+            raise ObtainDataError('Reference column "{}" not found.'.format(reference))
+
+        _invalid_columns = list()
+        for i in self.target_columns:
+            if i not in _testdf.columns.values:
+                _invalid_columns.append(i)
+        if len(_invalid_columns) > 0:
+            raise ObtainDataError('Not possible to find columns "{}".'.format('", "'.join(_invalid_columns)))
+
+        if self.target_columns is None:
+            self.target_columns = _testdf.columns.values
+        self._df = CSVTable.get_file(target_file, delimiter=delimiter, columns=[self.reference] + self.target_columns, encoding=self.encoding, low_memory=self.low_memory)
+
+    def _post_op(self, df):
+        return super()._post_op(df)
+
+    def obtain_data(self, mapping, warning=True):
+        if warning:
+            print("TODO: this call does not perform any check")
+        return self._post_op(self._df.loc[self._df[self.reference].isin(mapping)])
+
+
+class DBTable(DataSource):
+    """
+    This is a generic extractor for a table. This needs to be derived to create an extractor for another table.
+
+    @param reference: reference variable (to be used from a reference pandas data frame)
+    @param query: query to be run against the engine
+    @param engine: an sqlalchemy engine
+    @param rename: if we should rename the returned table (instead of the class name) to name
+    @param name: name to show on the returned data
+    """
+    def __init__(self, reference, query, engine=None, rename=True, name=None):
+        super().__init__(reference=reference, name=name, rename=rename)
+        self.engine = engine
+        self.query = query
+        self._number_cols = 0
+        self._columns = []
+        self._query_sql = None
+
+       
     def _format_for_query(self, values):
         """
         Prepares the values to fit the SQL query
